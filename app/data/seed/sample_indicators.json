@@ -1,0 +1,19 @@
+{
+  "report_id": "demo-report-001",
+  "user_id": "demo-001",
+  "source_object_key": "reports/raw/demo-001/demo.pdf",
+  "indicators": [
+    {"name": "丙氨酸氨基转移酶", "raw_name": "ALT", "value": 65, "unit": "U/L", "ref_range": "7-40", "abnormal": true, "abnormal_direction": "high"},
+    {"name": "天门冬氨酸氨基转移酶", "raw_name": "AST", "value": 58, "unit": "U/L", "ref_range": "13-35", "abnormal": true, "abnormal_direction": "high"},
+    {"name": "γ-谷氨酰转移酶", "raw_name": "GGT", "value": 89, "unit": "U/L", "ref_range": "11-50", "abnormal": true, "abnormal_direction": "high"},
+    {"name": "总胆固醇", "raw_name": "TC", "value": 6.4, "unit": "mmol/L", "ref_range": "<5.2", "abnormal": true, "abnormal_direction": "high"},
+    {"name": "低密度脂蛋白胆固醇", "raw_name": "LDL-C", "value": 3.9, "unit": "mmol/L", "ref_range": "<3.4", "abnormal": true, "abnormal_direction": "high"},
+    {"name": "甘油三酯", "raw_name": "TG", "value": 1.5, "unit": "mmol/L", "ref_range": "<1.7"},
+    {"name": "高密度脂蛋白胆固醇", "raw_name": "HDL-C", "value": 1.2, "unit": "mmol/L", "ref_range": ">1.0"},
+    {"name": "空腹血糖", "raw_name": "FPG", "value": 5.8, "unit": "mmol/L", "ref_range": "3.9-6.1"},
+    {"name": "甲胎蛋白", "raw_name": "AFP", "value": 4.5, "unit": "ng/mL", "ref_range": "<8.78"},
+    {"name": "白细胞计数", "raw_name": "WBC", "value": 7.2, "unit": "10^9/L", "ref_range": "4-10"},
+    {"name": "血红蛋白", "raw_name": "HGB", "value": 145, "unit": "g/L", "ref_range": "130-175"},
+    {"name": "血小板计数", "raw_name": "PLT", "value": 220, "unit": "10^9/L", "ref_range": "100-300"}
+  ]
+}

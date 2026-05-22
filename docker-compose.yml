@@ -1,0 +1,165 @@
+version: "3.9"
+
+# ============================================================
+# MediRead 一键启动栈 — 适配本地开发与企业私有化部署
+# 启动：docker compose up -d
+# 拉模型：docker compose exec ollama ollama pull glm4:9b-chat-q4_k_m
+# 初始化：docker compose exec api python -m scripts.seed
+# ============================================================
+
+x-restart: &default-restart
+  restart: unless-stopped
+
+services:
+  # ---------------- 关系库 ----------------
+  mysql:
+    image: mysql:8.0
+    container_name: mediread-mysql
+    <<: *default-restart
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DB:-mediread}
+      MYSQL_USER: ${MYSQL_USER:-mediread}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-changeme}
+      TZ: Asia/Shanghai
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD:-root}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ---------------- 缓存 ----------------
+  redis:
+    image: redis:7.2-alpine
+    container_name: mediread-redis
+    <<: *default-restart
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ---------------- 对象存储 ----------------
+  minio:
+    image: minio/minio:RELEASE.2024-04-18T19-09-19Z
+    container_name: mediread-minio
+    <<: *default-restart
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/minio/health/live"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # ---------------- Milvus ----------------
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.5
+    container_name: mediread-etcd
+    <<: *default-restart
+    environment:
+      ETCD_AUTO_COMPACTION_MODE: revision
+      ETCD_AUTO_COMPACTION_RETENTION: "1000"
+      ETCD_QUOTA_BACKEND_BYTES: "4294967296"
+    volumes:
+      - etcd_data:/etcd
+    command: etcd -advertise-client-urls=http://127.0.0.1:2379 -listen-client-urls http://0.0.0.0:2379 --data-dir /etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  milvus:
+    image: milvusdb/milvus:v2.4.0
+    container_name: mediread-milvus
+    <<: *default-restart
+    command: ["milvus", "run", "standalone"]
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+      COMMON_STORAGETYPE: minio
+    depends_on:
+      etcd:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    ports:
+      - "19530:19530"
+      - "9091:9091"
+    volumes:
+      - milvus_data:/var/lib/milvus
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9091/healthz"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  # ---------------- Ollama (本地 LLM) ----------------
+  ollama:
+    image: ollama/ollama:latest
+    container_name: mediread-ollama
+    <<: *default-restart
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    # 如果机器有 GPU，把以下两行取消注释（且宿主装好 nvidia-container-toolkit）
+    # deploy:
+    #   resources: { reservations: { devices: [{ driver: nvidia, count: all, capabilities: [gpu] }] } }
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:11434/api/tags"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+
+  # ---------------- 应用 ----------------
+  api:
+    build: .
+    image: mediread-api:0.2.0
+    container_name: mediread-api
+    <<: *default-restart
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      milvus:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      MYSQL_HOST: mysql
+      REDIS_URL: redis://redis:6379/0
+      MILVUS_HOST: milvus
+      MINIO_ENDPOINT: minio:9000
+      LLM_BASE_URL: http://ollama:11434/v1
+    ports:
+      - "8000:8000"
+    volumes:
+      - model_cache:/app/.cache
+
+volumes:
+  mysql_data:
+  minio_data:
+  milvus_data:
+  etcd_data:
+  ollama_data:
+  model_cache:

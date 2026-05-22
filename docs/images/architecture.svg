@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 520" font-family="Inter, system-ui, sans-serif" font-size="13">
+  <style>
+    .layer { fill: #f8fafc; stroke: #cbd5e1; rx: 8; }
+    .agent { fill: #fef9c3; stroke: #ca8a04; rx: 10; }
+    .main  { fill: #dbeafe; stroke: #2563eb; rx: 10; }
+    .infra { fill: #ecfccb; stroke: #65a30d; rx: 10; }
+    .arrow { stroke: #475569; stroke-width: 1.4; fill: none; marker-end: url(#a); }
+    text { fill: #0f172a; }
+    .title { font-weight: 700; font-size: 14px; }
+  </style>
+  <defs>
+    <marker id="a" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#475569"/>
+    </marker>
+  </defs>
+
+  <rect class="layer" x="20" y="20" width="840" height="60"/>
+  <text class="title" x="40" y="55">FastAPI Gateway · /upload · /parse · /interpret · /history</text>
+
+  <rect class="main" x="120" y="110" width="280" height="160"/>
+  <text class="title" x="140" y="135">报告解析 Agent (Parser)</text>
+  <text x="140" y="160">PaddleOCR + 版式识别</text>
+  <text x="140" y="180">6 字段抽取 (指标/值/单位/参考/性别/年龄)</text>
+  <text x="140" y="200">指标归一化 + 同义词映射</text>
+  <text x="140" y="220">Pydantic + JSONSchema 双层校验</text>
+  <text x="140" y="240">结构化 JSON 归档 MinIO</text>
+
+  <rect class="main" x="480" y="110" width="280" height="160"/>
+  <text class="title" x="500" y="135">医学解读 Agent (Interpreter)</text>
+  <text x="500" y="160">RAG: BM25 + BGE + RRF + Cross-Encoder</text>
+  <text x="500" y="180">多指标联合 (ALT+AST+GGT 等)</text>
+  <text x="500" y="200">ReAct 多步推理</text>
+  <text x="500" y="220">四级风险 / 四级就医</text>
+  <text x="500" y="240">危急值兜底</text>
+
+  <line class="arrow" x1="400" y1="190" x2="478" y2="190"/>
+  <text x="402" y="183" font-size="11">结构化 JSON</text>
+
+  <rect class="agent" x="40" y="310" width="200" height="70"/>
+  <text class="title" x="55" y="335">医院模板</text>
+  <text x="55" y="355">华西 / 美年 / 爱康</text>
+  <text x="55" y="372">慈铭 / 平安 / 通用兜底</text>
+
+  <rect class="agent" x="640" y="310" width="200" height="70"/>
+  <text class="title" x="655" y="335">医学知识库</text>
+  <text x="655" y="355">《体检共识》《检验大全》</text>
+  <text x="655" y="372">系统分类 / 风险等级元数据</text>
+
+  <line class="arrow" x1="140" y1="310" x2="200" y2="270"/>
+  <line class="arrow" x1="740" y1="310" x2="660" y2="270"/>
+
+  <rect class="infra" x="20" y="400" width="840" height="100"/>
+  <text class="title" x="40" y="430">数据 / 模型层</text>
+  <text x="40" y="455">Milvus · MySQL · Redis · MinIO</text>
+  <text x="40" y="475">Ollama (GLM-4-9B-Chat 量化版) · BGE Embedding / Reranker — 健康数据零外传</text>
+  <line class="arrow" x1="440" y1="80" x2="260" y2="105"/>
+  <line class="arrow" x1="440" y1="80" x2="620" y2="105"/>
+  <line class="arrow" x1="260" y1="270" x2="200" y2="395"/>
+  <line class="arrow" x1="620" y1="270" x2="660" y2="395"/>
+</svg>
