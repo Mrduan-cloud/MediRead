@@ -39,9 +39,11 @@ LOG_FILE="${TMPDIR:-/tmp}/mediread-paddle-resolve.log"
 
 echo ""
 echo "[2/3] resolving paddleocr / paddlepaddle pins (dry-run, no download)..."
+# Pin 应当与 requirements.txt 保持一致。上限收紧在 <2.8.0:2.8+ 移除了
+# PaddleOCR(show_log=...) / use_gpu / .ocr(cls=...) 等 ocr.py 当前在用的参数。
 "$PYTHON" -m pip install --dry-run \
-    "paddleocr>=2.7.3,<3.0.0" \
-    "paddlepaddle>=2.6.1,<3.0.0" \
+    "paddleocr>=2.7.3,<2.8.0" \
+    "paddlepaddle>=2.6.2,<3.0.0" \
     > "$LOG_FILE" 2>&1 || {
         echo "[ERROR] pip resolve failed - see log:"
         cat "$LOG_FILE"

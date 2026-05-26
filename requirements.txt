@@ -13,14 +13,21 @@ langchain-community==0.0.34
 openai==1.23.2
 
 # =========== OCR ===========
-# PaddleOCR 2.7+ 引入了 PP-OCRv4 模型(中文识别 + 检测精度均显著提升),
-# 这是医疗体检报告解析依赖的最小版本。3.0+ 是 PP-OCR 主架构重写
-# (breaking 接口 + 新模型权重格式),先 cap 在 2.x 线避免被自动升级到 3.x
-# 后报告解析 Agent 静默退化。需要升 3.x 时按独立任务对齐。
-paddleocr>=2.7.3,<3.0.0
-# paddlepaddle 2.5+ 是 PaddleOCR 2.7+ 的最低运行时,同样 cap 在 2.x 线
-# (3.x 改了算子注册机制 + 动态图默认行为,需要逐步迁移)
-paddlepaddle>=2.6.1,<3.0.0
+# PaddleOCR 2.7.x 引入了 PP-OCRv4 模型(中文识别 + 检测精度均显著提升),
+# 这是医疗体检报告解析依赖的最小版本。
+#
+# 上限收紧到 <2.8 的原因:
+#   - 2.8+ 开始废弃/移除 PaddleOCR 构造函数的 show_log / use_gpu 参数,
+#     2.10 直接抛 TypeError: unexpected keyword argument 'show_log'。
+#   - app/agents/parser/ocr.py 当前调用 PaddleOCR(show_log=False, use_gpu=...)
+#     + .ocr(arr, cls=True),走的是 2.7.x 旧 API。
+#   - 因此放宽到 2.8/2.9/2.10 会让报告解析 Agent 启动时崩溃。
+#   - 升 2.8+ 或 3.x 需要走独立 PR + 同步改 ocr.py。
+paddleocr>=2.7.3,<2.8.0
+# paddlepaddle 2.x 系列已 EOL,PyPI 上只剩 2.6.2 这一个版本,
+# 对齐到 ">=2.6.2,<3.0.0" 反映实际可选范围;3.x 改了算子注册机制 +
+# 动态图默认行为,需要逐步迁移。
+paddlepaddle>=2.6.2,<3.0.0
 pdf2image==1.17.0
 Pillow==10.3.0
 numpy==1.26.4
