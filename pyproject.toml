@@ -2,7 +2,11 @@
 name = "mediread"
 version = "0.2.0"
 description = "AI 体检报告智能解读平台"
-requires-python = ">=3.11"
+# 上限 cap 在 <3.13 的原因:paddlepaddle 2.x 系列最高 2.6.2 只发布到
+# cp38/cp39/cp310/cp311/cp312 wheel,Python 3.13 没有 2.x wheel。
+# 要支持 3.13 需要把 paddlepaddle / paddleocr 升到 3.x,届时随 OCR 链路
+# 升级一并对齐。
+requires-python = ">=3.11,<3.13"
 
 [tool.ruff]
 line-length = 110
