@@ -54,3 +54,27 @@ jobs:
         # CI 单步执行时间 < 10s。若未来想接 --smoke,需要预算下载 paddle 的
         # ~500MB,单独 job + actions/cache。
         run: bash scripts/verify-paddle-pins.sh
+
+  # 独立 job:验证 Dockerfile 还能 build。
+  # - 只在 Dockerfile / requirements.txt / app 代码改动时触发,避免每次 docs PR 都跑 13 分钟
+  # - 用 GHA layer cache (type=gha) 后续 build 1-2 分钟
+  # - push=false 只验证不推 registry(暂时不需要发布镜像)
+  # - 本地 docker build 实测:冷启动 ~13 min(paddlepaddle 装载占 9 min),
+  #   image 7.29GB(W11 任务会瘦身到 <1.5GB,在那之前 CI 至少保证它能 build)
+  docker-build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build image (no push)
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          load: false
+          tags: mediread:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
