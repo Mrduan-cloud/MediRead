@@ -1,8 +1,8 @@
 """BGE Embedding + Cross-Encoder Reranker — 懒加载，本地缓存。"""
 from __future__ import annotations
 
+from collections.abc import Sequence
 from functools import lru_cache
-from typing import Sequence
 
 from loguru import logger
 
@@ -47,6 +47,6 @@ def rerank(query: str, candidates: list[dict], top_k: int = 8) -> list[dict]:
     scores = _reranker().compute_score(pairs)
     if isinstance(scores, float):
         scores = [scores]
-    out = [{**c, "rerank_score": float(s)} for c, s in zip(candidates, scores)]
+    out = [{**c, "rerank_score": float(s)} for c, s in zip(candidates, scores, strict=True)]
     out.sort(key=lambda x: x["rerank_score"], reverse=True)
     return out[:top_k]

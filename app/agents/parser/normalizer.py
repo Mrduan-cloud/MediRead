@@ -9,7 +9,6 @@ import json
 from functools import lru_cache
 from pathlib import Path
 
-
 _SYNONYMS_PATH = Path(__file__).resolve().parents[2] / "data" / "synonyms.json"
 
 

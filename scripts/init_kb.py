@@ -1,10 +1,11 @@
 """一键初始化医学知识库。"""
 from __future__ import annotations
+
 import argparse
 import asyncio
 from pathlib import Path
 
-from app.rag.ingestion import split_document, embed_and_upsert
+from app.rag.ingestion import embed_and_upsert, split_document
 
 
 async def main(source_dir: Path, collection: str) -> None:

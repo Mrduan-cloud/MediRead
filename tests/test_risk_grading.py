@@ -1,5 +1,5 @@
 """风险分级单测样例。"""
-from app.agents.interpreter.risk_grading import grade_risk, RiskLevel, TriageLevel
+from app.agents.interpreter.risk_grading import RiskLevel, TriageLevel, grade_risk
 
 
 def test_mild():

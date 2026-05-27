@@ -5,7 +5,12 @@ from functools import lru_cache
 
 from loguru import logger
 from pymilvus import (
-    Collection, CollectionSchema, DataType, FieldSchema, connections, utility,
+    Collection,
+    CollectionSchema,
+    DataType,
+    FieldSchema,
+    connections,
+    utility,
 )
 
 from app.config import get_settings
@@ -31,7 +36,7 @@ def is_healthy() -> bool:
     try:
         connect_milvus()
         return utility.list_collections(using=_alias()) is not None
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         logger.warning("milvus health failed: {}", e)
         return False
 

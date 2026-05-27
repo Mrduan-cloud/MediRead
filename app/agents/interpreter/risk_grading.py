@@ -5,19 +5,21 @@
 """
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
+
 from pydantic import BaseModel
+
 from app.agents.parser.normalizer import parse_ref_range
 
 
-class RiskLevel(str, Enum):
+class RiskLevel(StrEnum):
     MILD = "轻度偏离"
     WATCH = "关注观察"
     RECHECK = "建议复查"
     SEEK_CARE = "建议就医"
 
 
-class TriageLevel(str, Enum):
+class TriageLevel(StrEnum):
     NONE = "无需"
     GENERAL = "全科"
     SPECIALIST = "专科"
@@ -73,7 +75,9 @@ def grade_risk(indicator: str, value: float | str, ref_range: str | None) -> Ind
         )
 
     dev = _deviation(value, ref_range) or 0.0
-    if dev < 0.1:
+    # 边界包含:恰好 ±10% 视为温和偏离(医学场景的"略高于正常上限"通常归为 MILD,
+    # 而不是触发观察。test_risk_grading.py::test_mild 锁定此契约。)
+    if dev <= 0.1:
         return IndicatorRisk(indicator=indicator, value=value, deviation_pct=dev,
                              risk_level=RiskLevel.MILD, triage=TriageLevel.NONE)
     if dev < 0.3:

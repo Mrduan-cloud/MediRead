@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import re
-from typing import Any
 
 from jsonschema import validate as jsonschema_validate
 from loguru import logger
@@ -11,7 +10,6 @@ from app.agents.parser.layout import detect_template, get_column_anchors
 from app.agents.parser.normalizer import normalize_indicator_name, parse_ref_range
 from app.agents.parser.ocr import ocr_image, ocr_pdf
 from app.agents.parser.schemas import Indicator, Report
-
 
 REPORT_JSON_SCHEMA = {
     "type": "object",

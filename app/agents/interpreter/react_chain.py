@@ -75,7 +75,7 @@ async def interpret_report(report: Report) -> dict[str, Any]:
                 "lifestyle": text.get("lifestyle") or "",
                 "triage_advice": text.get("triage_advice") or "",
             })
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             logger.exception("interpret {} failed", ind.name)
             interpretations.append({
                 "indicator": ind.name,

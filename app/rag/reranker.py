@@ -1,7 +1,7 @@
 """Cross-Encoder 精排（BGE Reranker）。"""
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 
 from app.core.embeddings import rerank
 

@@ -14,7 +14,25 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "PL", "RUF"]
-ignore = ["E501", "PLR0913", "PLR2004", "PLR0915"]
+ignore = [
+    # 长度类:行长统一由 line-length=110 控制,放过 docstring
+    "E501",
+    # Pylint 严格度:对单文件 / 业务代码不友好
+    "PLR0913",  # too-many-arguments —— FastAPI 路由 / Pydantic 模型常超
+    "PLR2004",  # magic-value-comparison —— 阈值常量频繁
+    "PLR0915",  # too-many-statements —— Agent 链路单函数难拆短
+    "PLR0911",  # too-many-return-statements —— 多分支决策函数自然多 return
+    # RUF "ambiguous unicode" 三件套:中文医学术语合法包含 γ / β / α 等希腊字母
+    # (γ-谷氨酰转移酶 = GGT 的中文标准名),也合法包含全角逗号 / 中文括号。
+    # 这些都不是"误打字母 y / 半角逗号",而是真实业务用语。
+    "RUF001",  # ambiguous-unicode-character-string
+    "RUF002",  # ambiguous-unicode-character-docstring
+    "RUF003",  # ambiguous-unicode-character-comment
+    # B008 在 FastAPI 项目里是误报:`def route(x = Depends(get_x))` 是惯用法。
+    "B008",
+    # 业务约定:循环依赖处主动使用 lazy import,这是有意为之
+    "PLC0415",
+]
 
 [tool.pytest.ini_options]
 addopts = "-q --tb=short"

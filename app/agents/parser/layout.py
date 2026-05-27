@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from typing import Literal
 
-
 HospitalTemplate = Literal[
     "generic",      # 通用模板（兜底）
     "huaxi",        # 华西
