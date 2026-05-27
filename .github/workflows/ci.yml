@@ -7,6 +7,26 @@ on:
     branches: [main]
 
 jobs:
+  # 文件路径变更检测 —— 决定下面哪些 job 真的要跑。
+  # 把 28-min docker-build 锁在 OCR / deps / 代码 实际改动时才触发,
+  # 避免 README / docs PR 也付那个时间成本。
+  changes:
+    runs-on: ubuntu-22.04
+    outputs:
+      docker: ${{ steps.filter.outputs.docker }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            docker:
+              - 'Dockerfile'
+              - 'requirements.txt'
+              - 'app/**'
+              - 'scripts/**'
+              - '.github/workflows/ci.yml'
+
   lint-test:
     runs-on: ubuntu-22.04
     steps:
@@ -62,6 +82,8 @@ jobs:
   # - 本地 docker build 实测:冷启动 ~13 min(paddlepaddle 装载占 9 min),
   #   image 7.29GB(W11 任务会瘦身到 <1.5GB,在那之前 CI 至少保证它能 build)
   docker-build:
+    needs: changes
+    if: needs.changes.outputs.docker == 'true'
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
