@@ -65,7 +65,9 @@ jobs:
           PY
 
       - name: Pure-logic tests
-        run: pytest tests/test_normalizer.py tests/test_risk_grading.py -v
+        # test_ocr_parsing 测 _parse_paddle_result 纯函数（不碰 paddle/numpy/PIL）；
+        # 真实 OCR 的 test_ocr_smoke 带 `ocr` 标记，被 addopts `-m 'not ocr'` 默认 deselect。
+        run: pytest tests/test_normalizer.py tests/test_risk_grading.py tests/test_ocr_parsing.py -v
 
       - name: Verify PaddleOCR pins (dry-run)
         # 在 setup-python (3.11) 环境里跑 verify 脚本 ——
