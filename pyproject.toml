@@ -35,6 +35,11 @@ ignore = [
 ]
 
 [tool.pytest.ini_options]
-addopts = "-q --tb=short"
+# 默认 deselect `ocr` 标记 —— 那些测试需要真实 paddleocr+paddlepaddle 栈
+# (Python 3.11/3.12, ~500MB 权重)。显式开启用 `pytest -m ocr`。
+addopts = "-q --tb=short -m 'not ocr'"
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "ocr: 端到端 OCR 测试，需真实 PaddleOCR 栈；默认不跑，`pytest -m ocr` 显式开启",
+]

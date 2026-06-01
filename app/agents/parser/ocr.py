@@ -1,4 +1,10 @@
-"""PaddleOCR 调用 — 真实集成，支持图片 / PDF 双格式。"""
+"""PaddleOCR 调用 — 真实集成，支持图片 / PDF 双格式。
+
+注：Prometheus 指标 (`app.observability.metrics`) 在函数内 **懒加载**——该模块
+顶层 import 了 fastapi / prometheus_client，而纯解析逻辑 (`_parse_paddle_result`)
+应当能在不装 fastapi/prometheus 的轻量测试 (CI pure-logic) 环境里被导入。
+重型依赖 (paddleocr / numpy / PIL / pdf2image) 同理全部函数内懒加载。
+"""
 from __future__ import annotations
 
 import time
@@ -9,7 +15,6 @@ from typing import Any
 from loguru import logger
 
 from app.config import get_settings
-from app.observability.metrics import ocr_latency
 
 
 @lru_cache(maxsize=1)
@@ -62,6 +67,7 @@ def _parse_paddle_result(raw) -> list[dict[str, Any]]:
 
 
 def ocr_image(image_bytes: bytes) -> list[dict[str, Any]]:
+    from app.observability.metrics import ocr_latency
     t0 = time.perf_counter()
     arr = _to_numpy(image_bytes)
     raw = _engine().ocr(arr, cls=True)
@@ -73,6 +79,8 @@ def ocr_image(image_bytes: bytes) -> list[dict[str, Any]]:
 def ocr_pdf(pdf_bytes: bytes) -> list[list[dict[str, Any]]]:
     """PDF → 每页一组 OCR 结果。"""
     from pdf2image import convert_from_bytes
+
+    from app.observability.metrics import ocr_latency
     t0 = time.perf_counter()
     pages = convert_from_bytes(pdf_bytes, dpi=200, fmt="png")
     results: list[list[dict[str, Any]]] = []

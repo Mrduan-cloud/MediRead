@@ -49,6 +49,10 @@ data/uploads/
 *.png
 !docs/**/*.png
 !docs/**/*.svg
+# 测试 fixture 图片需入库（OCR smoke test 依赖），数据均为脱敏 mock
+!tests/fixtures/*.png
+!tests/fixtures/*.jpg
+!tests/fixtures/*.jpeg
 models/
 checkpoints/
 milvus_data/
