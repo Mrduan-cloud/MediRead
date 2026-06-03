@@ -40,13 +40,10 @@ RUN mkdir -p /app/.cache/models /app/.cache/bm25 /app/.cache/paddle && chown -R 
 USER app
 EXPOSE 8000
 
-# 预置 PP-OCR 模型(det/rec/cls)到镜像 → 运行时离线可用,免去首次请求时联网下载
-# (数十 MB + 数秒延迟)。以 app 用户执行,模型落到 ~/.paddleocr(=/app/.paddleocr,
-# app 的 home),与运行时 PaddleOCR 的默认缓存路径一致,直接命中。
-# 依赖 requirements.txt 的 Cython<3 pin(否则 import paddle 段错误,模型也无从下载)。
-# build 期需可达 PP-OCR 模型 CDN;失败即 build 红,信号清晰。
-RUN python -c "from paddleocr import PaddleOCR; PaddleOCR(lang='ch', use_angle_cls=True, show_log=False)" \
-    && echo "PP-OCR models prefetched into image"
+# 注:曾尝试 build 期 `PaddleOCR()` 预置模型,但 CI 的多阶段 `pip install --prefix`
+# + `COPY --from=builder` 经 gha 缓存压缩后,pyclipper 的 .so 被损坏(import 抛
+# zlib.error;同版本本地直装/老镜像均正常)。属 CI 构建缓存基建问题,已回退预置;
+# 模型改为运行时首次按需下载(生产可在不走 gha 缓存的构建/registry 镜像里预置)。
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD curl -fsS http://localhost:8000/health || exit 1
