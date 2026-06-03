@@ -39,3 +39,25 @@ class AuditLog(models.Model):
 
     class Meta:
         table = "audit_log"
+
+
+class AuthAccount(models.Model):
+    """登录凭证 —— 认证关注点独立成表。
+
+    ``username`` 即 user_id(沿用全栈以 user_id 为中心的设计),口令、角色、
+    停用、失败锁定等认证状态独立存储,与体检报告(ReportModel.user_id)解耦。
+    """
+
+    username = fields.CharField(pk=True, max_length=64)
+    password_hash = fields.CharField(max_length=255)
+    role = fields.CharField(max_length=16, default="user")  # user | admin
+    is_demo = fields.BooleanField(default=False)  # 演示账号:登录页快速体验入口
+    is_active = fields.BooleanField(default=True)  # 停用后无法登录
+    failed_attempts = fields.IntField(default=0)
+    # 锁定截止时间存 UTC 纪元秒(int):整数比较无时区歧义
+    locked_until_ts = fields.BigIntField(null=True)
+    last_login_at = fields.DatetimeField(null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "auth_account"

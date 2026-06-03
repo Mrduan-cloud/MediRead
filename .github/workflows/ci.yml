@@ -43,7 +43,7 @@ jobs:
           # tests/* 透过 app/agents/interpreter/__init__.py 拉到 react_chain → loguru,
           # 所以即便是"纯逻辑测试"也需要 loguru。这里装的都是轻量库,
           # 不碰 paddleocr / paddlepaddle / pymilvus / sentence-transformers 等重型 OCR/RAG 栈。
-          pip install pydantic pydantic-settings jsonschema rank_bm25 loguru
+          pip install pydantic pydantic-settings jsonschema rank_bm25 loguru bcrypt
 
       - name: Ruff lint
         run: ruff check app tests scripts
@@ -67,7 +67,9 @@ jobs:
       - name: Pure-logic tests
         # test_ocr_parsing 测 _parse_paddle_result 纯函数（不碰 paddle/numpy/PIL）；
         # 真实 OCR 的 test_ocr_smoke 带 `ocr` 标记，被 addopts `-m 'not ocr'` 默认 deselect。
-        run: pytest tests/test_normalizer.py tests/test_risk_grading.py tests/test_ocr_parsing.py tests/test_layout.py -v
+        # test_auth_security 测口令哈希 + 锁定策略纯函数（只需 bcrypt，不碰 DB/tortoise）；
+        # 带 DB 的 test_routes_auth 需 tortoise/httpx,留给本地 + 完整 dev 依赖跑。
+        run: pytest tests/test_normalizer.py tests/test_risk_grading.py tests/test_ocr_parsing.py tests/test_layout.py tests/test_auth_security.py -v
 
       - name: Verify PaddleOCR pins (dry-run)
         # 在 setup-python (3.11) 环境里跑 verify 脚本 ——

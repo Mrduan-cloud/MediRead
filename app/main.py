@@ -9,12 +9,14 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 
 from app.api import (
+    routes_auth,
     routes_health,
     routes_history,
     routes_interpret,
     routes_parse,
     routes_upload,
 )
+from app.auth.bootstrap import ensure_auth_seed
 from app.config import get_settings
 from app.core.db import close_db, init_db
 from app.core.storage import ensure_bucket
@@ -28,10 +30,19 @@ async def lifespan(app: FastAPI):
     setup_logging()
     s = get_settings()
     logger.info("starting {} env={}", s.app_name, s.app_env)
+
+    # 安全自检:生产环境若仍用默认敏感配置 → 直接拒启(fail fast);开发期仅告警。
+    insecure = s.insecure_defaults()
+    if insecure:
+        if s.is_prod:
+            raise RuntimeError(f"生产环境禁止使用默认敏感配置: {', '.join(insecure)}")
+        logger.warning("⚠ 仍在使用默认敏感配置(生产务必覆盖): {}", ", ".join(insecure))
+
     try:
         await init_db()
+        await ensure_auth_seed()
     except Exception as e:
-        logger.warning("DB init failed: {}", e)
+        logger.warning("DB init / auth seed failed (will retry on demand): {}", e)
     try:
         ensure_bucket()
     except Exception as e:
@@ -60,6 +71,7 @@ def create_app() -> FastAPI:
     app.add_middleware(AccessLogMiddleware)
 
     app.include_router(routes_health.router, tags=["健康检查"])
+    app.include_router(routes_auth.router, prefix="/api/auth", tags=["鉴权"])
     app.include_router(routes_upload.router, prefix="/api/upload", tags=["上传"])
     app.include_router(routes_parse.router, prefix="/api/parse", tags=["报告解析"])
     app.include_router(routes_interpret.router, prefix="/api/interpret", tags=["医学解读"])
