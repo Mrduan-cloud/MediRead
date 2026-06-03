@@ -34,6 +34,11 @@ paddlepaddle>=2.6.2,<3.0.0
 # 此前未 pin → 解析到 3.2.5 → 镜像里 import paddle 必崩。0.29.37 是最后一个
 # 0.29.x、有 cp311 wheel、与 paddle 2.6 同期,实测可正常 import + 跑通 OCR。
 Cython==0.29.37
+# pyclipper 是 paddleocr 的传递依赖(检测后处理的多边形裁剪 C 扩展)。显式 pin:
+# ① 防版本漂移;② docker 多阶段 build 的 gha 缓存层曾把 pyclipper 1.4.0 写坏,
+#    导致 `import pyclipper` 抛 zlib.error(inconsistent stream state,同版本老镜像却正常)
+#    —— 显式 pin 改动 requirements 哈希,强制重建干净的 pip 层冲掉坏缓存。
+pyclipper==1.4.0
 pdf2image==1.17.0
 Pillow==10.3.0
 numpy==1.26.4
