@@ -53,6 +53,9 @@ data/uploads/
 !tests/fixtures/*.png
 !tests/fixtures/*.jpg
 !tests/fixtures/*.jpeg
+
+# brainstorming 可视化伴侣的临时文件(mockup / 会话状态)
+.superpowers/
 models/
 checkpoints/
 milvus_data/

@@ -321,8 +321,11 @@ function ResultStage({
         </div>
       </div>
 
-      <div className="flex items-center justify-between pt-1">
-        <button onClick={onReset} className="text-sm text-neutral-400 transition hover:text-white">
+      <div className="flex items-center justify-between border-t border-white/10 pt-4">
+        <button
+          onClick={onReset}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-white/20 bg-white/5 px-4 py-2 text-sm font-medium text-neutral-100 transition hover:border-white/40 hover:bg-white/10 hover:text-white"
+        >
           ← 重新选择
         </button>
         <span className="font-mono text-xs text-neutral-600">demo · 数据为脱敏样例</span>
