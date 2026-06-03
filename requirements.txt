@@ -28,6 +28,12 @@ paddleocr>=2.7.3,<2.8.0
 # 对齐到 ">=2.6.2,<3.0.0" 反映实际可选范围;3.x 改了算子注册机制 +
 # 动态图默认行为,需要逐步迁移。
 paddlepaddle>=2.6.2,<3.0.0
+# Cython 必须 <3:paddlepaddle 2.6.2 在 `import paddle` 时经 cpp_extension →
+# setuptools build_ext 拉 Cython,Cython 3.x 与 paddle 2.6 的 C++ 初始化不兼容,
+# 会在导入阶段直接崩(free(): invalid pointer / SIGSEGV,无 Python traceback)。
+# 此前未 pin → 解析到 3.2.5 → 镜像里 import paddle 必崩。0.29.37 是最后一个
+# 0.29.x、有 cp311 wheel、与 paddle 2.6 同期,实测可正常 import + 跑通 OCR。
+Cython==0.29.37
 pdf2image==1.17.0
 Pillow==10.3.0
 numpy==1.26.4
