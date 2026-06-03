@@ -41,9 +41,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install ruff pytest pytest-asyncio
           # tests/* 透过 app/agents/interpreter/__init__.py 拉到 react_chain → loguru,
-          # 所以即便是"纯逻辑测试"也需要 loguru。这里装的都是轻量库,
+          # 所以即便是"纯逻辑测试"也需要 loguru;test_auth_security 透过 app/auth/__init__.py
+          # 急加载 jwt.py → 需要 fastapi + PyJWT,passwords.py → bcrypt。这里装的都是轻量库,
           # 不碰 paddleocr / paddlepaddle / pymilvus / sentence-transformers 等重型 OCR/RAG 栈。
-          pip install pydantic pydantic-settings jsonschema rank_bm25 loguru bcrypt PyJWT
+          pip install pydantic pydantic-settings jsonschema rank_bm25 loguru bcrypt PyJWT fastapi
 
       - name: Ruff lint
         run: ruff check app tests scripts
