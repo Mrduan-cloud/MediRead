@@ -4,10 +4,10 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 
 from app.auth import CurrentUser, get_current_user
-from app.schemas.models import ReportModel
+from app.schemas.models import InterpretationModel, ReportModel
 
 router = APIRouter()
 
@@ -46,3 +46,26 @@ async def list_reports(user: CurrentUser = Depends(get_current_user)) -> list[di
         }
         for r in rows
     ]
+
+
+@router.get("/report/{report_id}")
+async def get_report(report_id: str, user: CurrentUser = Depends(get_current_user)) -> dict:
+    """单份报告详情:结构化指标 + 最近一次 AI 解读(若有)。
+
+    供前端「点开历史报告」直接复看,无需重新上传 / 解析原图。
+    """
+    rec = await ReportModel.filter(report_id=report_id, user_id=user.user_id).first()
+    if not rec:
+        raise HTTPException(404, "report not found")
+    last = (
+        await InterpretationModel.filter(report_id=report_id, user_id=user.user_id)
+        .order_by("-created_at")
+        .first()
+    )
+    return {
+        "report_id": rec.report_id,
+        "created_at": rec.created_at.isoformat() if rec.created_at else None,
+        "hospital": rec.hospital,
+        "indicators": rec.indicators or [],
+        "interpretation": last.payload if last else None,
+    }
