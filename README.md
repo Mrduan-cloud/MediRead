@@ -104,6 +104,13 @@ MediRead/
 │   ├── data/
 │   │   └── synonyms.json       # 指标别名词典
 │   └── schemas/
+├── frontend/                  # Vue 3 + Vite + Naive UI 前端(深色主题,前后端分离)
+│   ├── src/
+│   │   ├── views/             # 登录 / 报告解读 / 历史趋势
+│   │   ├── components/        # 指标表 / 解读卡片 / ECharts 趋势图
+│   │   ├── stores/            # pinia · JWT 鉴权态
+│   │   └── api/               # axios + JWT 拦截器
+│   └── vite.config.ts         # 开发期 /api 代理到 :8000
 ├── docs/
 ├── scripts/
 ├── tests/
@@ -134,6 +141,19 @@ docker compose exec api python -m scripts.demo              # 跑端到端 demo
 - 健康探测: <http://localhost:8000/ready>
 - MinIO 控制台: <http://localhost:9001>
 - Prometheus 指标: <http://localhost:8000/metrics>
+
+### 前端 / Frontend
+
+后端起在 `:8000` 后,另开一个终端跑前端(Vue 3 + Vite,前后端分离,无需上云):
+
+```bash
+cd frontend
+pnpm install
+pnpm dev            # → http://localhost:5173 (开发期 /api 自动代理到 :8000)
+```
+
+演示账号 `demo-001` / `mediread2024`(已随 `scripts.seed` 灌入一份体检报告,登录即可一键解读)。
+前端说明见 **[`frontend/README.md`](frontend/README.md)**。
 
 ### 推荐配置 / Hardware
 
@@ -201,10 +221,15 @@ docker compose exec api python -m scripts.demo              # 跑端到端 demo
 
 | 路径                          | 方法 | 说明                            |
 | ----------------------------- | ---- | ------------------------------- |
+| `/api/auth/login`             | POST | 登录 → 签发角色化 JWT           |
+| `/api/auth/register`          | POST | 自助注册（随注册下发 token）    |
+| `/api/auth/demo-accounts`     | GET  | 演示账号列表（登录页一键体验）  |
 | `/api/upload`                 | POST | 上传体检报告（image / pdf）     |
 | `/api/parse/{report_id}`      | POST | 触发 OCR 解析与结构化抽取       |
 | `/api/interpret/{report_id}`  | POST | 触发医学解读 + 风险分级         |
-| `/api/history/{user_id}`      | GET  | 多次报告趋势对比                |
+| `/api/history/reports`        | GET  | 我的报告列表（含异常计数）      |
+| `/api/history/report/{id}`    | GET  | 单份报告详情（指标 + 最近解读） |
+| `/api/history/series`         | GET  | 多次报告同指标趋势              |
 
 完整 schema 见 `/docs` (Swagger UI)。
 
