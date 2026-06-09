@@ -7,7 +7,11 @@ from jsonschema import validate as jsonschema_validate
 from loguru import logger
 
 from app.agents.parser.layout import detect_template, get_column_anchors
-from app.agents.parser.normalizer import normalize_indicator_name, parse_ref_range
+from app.agents.parser.normalizer import (
+    normalize_glucose_value,
+    normalize_indicator_name,
+    parse_ref_range,
+)
 from app.agents.parser.ocr import ocr_image, ocr_pdf
 from app.agents.parser.schemas import Indicator, Report
 
@@ -129,6 +133,8 @@ def _ocr_lines_to_indicators(lines: list[dict]) -> list[Indicator]:
         if ind is None:
             continue
         ind.name = normalize_indicator_name(ind.raw_name)
+        # 血糖若为 mg/dL → 换算成系统标准单位 mmol/L,再做异常判定(KB 参考范围按 mmol/L)
+        ind.value, ind.unit = normalize_glucose_value(ind.name, ind.value, ind.unit)
         result.append(_mark_abnormal(ind))
     return result
 
