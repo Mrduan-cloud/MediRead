@@ -11,6 +11,30 @@
 
 ---
 
+## 界面预览 | Screenshots
+
+<p align="center">
+  <img src="docs/images/app-report.png" alt="MediRead · 体检报告解读" width="860"><br/>
+  <sub>上传体检报告(图片 / PDF)→ PaddleOCR 指标识别 → 结构化指标表(异常标红)+ RAG 接地解读 + 风险分级</sub>
+</p>
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="docs/images/app-login.png" alt="登录" width="100%"><br/>
+      <sub>登录 · JWT 鉴权(bcrypt 预哈希 + 失败锁定)· 演示账号一键体验</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="docs/images/app-history.png" alt="历史趋势" width="100%"><br/>
+      <sub>历史趋势 · 同一指标随多次报告的时间变化曲线</sub>
+    </td>
+  </tr>
+</table>
+
+> 前端为 Vue 3 + Naive UI 演示层(深色高级风),直观呈现后端 OCR + RAG 解读能力;项目重心与工程实绩在后端。
+
+---
+
 ## 项目背景 | Background
 
 用户拿到体检报告后，常面临三大痛点：
