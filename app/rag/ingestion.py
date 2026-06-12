@@ -9,7 +9,7 @@ from pathlib import Path
 
 from loguru import logger
 
-from app.clients.milvus import upsert_chunks
+from app.clients.milvus import drop_collection, upsert_chunks
 from app.config import get_settings
 from app.core.embeddings import embed_texts
 
@@ -73,7 +73,13 @@ async def embed_and_upsert(chunks: Iterable[Chunk], collection: str) -> int:
 
 
 async def ingest_markdown_dir(source_dir: str | Path, collection: str,
-                              base_metadata: dict | None = None) -> int:
+                              base_metadata: dict | None = None,
+                              recreate: bool = True) -> int:
+    """把目录下所有 .md 切块、向量化入库 + 落 BM25 源。
+
+    ``recreate=True``(默认):灌库前先 drop collection —— schema 主键 auto_id、
+    insert 无去重,反复灌会堆积重复 chunk 污染检索。重建保证灌库幂等。
+    """
     source = Path(source_dir)
     if not source.exists():
         raise FileNotFoundError(source)
@@ -82,6 +88,8 @@ async def ingest_markdown_dir(source_dir: str | Path, collection: str,
         rel = p.relative_to(source).as_posix()
         md = {"path": rel, **(base_metadata or {})}
         all_chunks.extend(split_document(doc_id=p.stem, content=p.read_text(encoding="utf-8"), base_metadata=md))
+    if recreate:
+        drop_collection(collection)
     n = await embed_and_upsert(all_chunks, collection)
 
     s = get_settings()
