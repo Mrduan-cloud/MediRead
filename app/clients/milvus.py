@@ -68,6 +68,31 @@ def ensure_collection(name: str, dim: int, description: str = "") -> Collection:
     return col
 
 
+def drop_collection(name: str) -> bool:
+    """删除 collection(若存在)。返回是否真的删了。
+
+    灌库前重建用 —— 本 schema 主键 ``auto_id=True``,``insert`` 是纯追加、没有
+    去重语义,重复灌库会堆积陈旧/重复 chunk,污染 RRF 融合。幂等灌库靠「先 drop
+    再建」。
+    """
+    connect_milvus()
+    if utility.has_collection(name, using=_alias()):
+        utility.drop_collection(name, using=_alias())
+        logger.info("dropped Milvus collection {}", name)
+        return True
+    return False
+
+
+def count_entities(name: str) -> int:
+    """collection 实体数(灌库后核对用)。collection 不存在返回 0。"""
+    connect_milvus()
+    if not utility.has_collection(name, using=_alias()):
+        return 0
+    col = Collection(name, using=_alias())
+    col.flush()
+    return col.num_entities
+
+
 def upsert_chunks(collection: str, chunks: list[dict]) -> int:
     if not chunks:
         return 0
