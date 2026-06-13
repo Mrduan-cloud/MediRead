@@ -84,13 +84,15 @@ def drop_collection(name: str) -> bool:
 
 
 def count_entities(name: str) -> int:
-    """collection 实体数(灌库后核对用)。collection 不存在返回 0。"""
+    """collection 实体数(灌库后核对用)。collection 不存在返回 0。
+
+    不在这里 ``flush()`` —— flush 是重操作,只为读计数不该触发;灌库侧
+    ``upsert_chunks`` 已 flush,核对前数据已可见。
+    """
     connect_milvus()
     if not utility.has_collection(name, using=_alias()):
         return 0
-    col = Collection(name, using=_alias())
-    col.flush()
-    return col.num_entities
+    return Collection(name, using=_alias()).num_entities
 
 
 def upsert_chunks(collection: str, chunks: list[dict]) -> int:
