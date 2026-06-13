@@ -70,7 +70,7 @@ jobs:
         # 真实 OCR 的 test_ocr_smoke 带 `ocr` 标记，被 addopts `-m 'not ocr'` 默认 deselect。
         # test_auth_security 测口令哈希 + 锁定策略纯函数（只需 bcrypt，不碰 DB/tortoise）；
         # 带 DB 的 test_routes_auth 需 tortoise/httpx,留给本地 + 完整 dev 依赖跑。
-        run: pytest tests/test_normalizer.py tests/test_risk_grading.py tests/test_ocr_parsing.py tests/test_layout.py tests/test_auth_security.py tests/test_kb_docs.py tests/test_bm25.py tests/test_rrf_fusion.py tests/test_bm25_cache.py -v
+        run: pytest tests/test_normalizer.py tests/test_risk_grading.py tests/test_ocr_parsing.py tests/test_layout.py tests/test_auth_security.py tests/test_kb_docs.py tests/test_bm25.py tests/test_rrf_fusion.py tests/test_bm25_cache.py tests/test_retrieval_eval.py -v
 
       - name: Verify PaddleOCR pins (dry-run)
         # 在 setup-python (3.11) 环境里跑 verify 脚本 ——
