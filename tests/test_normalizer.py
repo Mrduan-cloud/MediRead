@@ -1,5 +1,6 @@
 """指标归一化单测样例。"""
 from app.agents.parser.normalizer import (
+    aliases_for,
     glucose_mg_dl_to_mmol_l,
     glucose_mmol_l_to_mg_dl,
     is_glucose_indicator,
@@ -14,6 +15,44 @@ def test_alias_mapping():
     assert normalize_indicator_name("HDL-C") == "高密度脂蛋白胆固醇"
     # 未命中 → 返回原文
     assert normalize_indicator_name("未知指标X") == "未知指标X"
+
+
+def test_alias_chinese_oldnames_to_standard():
+    # 中文旧称 / 变体 → 标准名(↔ 的另一侧)
+    assert normalize_indicator_name("谷丙转氨酶") == "丙氨酸氨基转移酶"
+    assert normalize_indicator_name("谷草转氨酶") == "天门冬氨酸氨基转移酶"
+    assert normalize_indicator_name("谷氨酰转肽酶") == "γ-谷氨酰转移酶"
+    assert normalize_indicator_name("血色素") == "血红蛋白"
+    assert normalize_indicator_name("三酰甘油") == "甘油三酯"
+
+
+def test_alias_messy_ocr_variants():
+    # 大小写 / 全角 / 空白 / 连字符与希腊字母变体,都应命中同一标准名
+    assert normalize_indicator_name("ggt") == "γ-谷氨酰转移酶"
+    assert normalize_indicator_name("ＧＧＴ") == "γ-谷氨酰转移酶"      # 全角
+    assert normalize_indicator_name(" G G T ") == "γ-谷氨酰转移酶"     # 内嵌空白
+    assert normalize_indicator_name("Γ-GT") == "γ-谷氨酰转移酶"        # 希腊大写 Γ
+    assert normalize_indicator_name("HDL—C") == "高密度脂蛋白胆固醇"  # em-dash 连字符
+
+
+def test_alias_standard_name_is_idempotent():
+    # 已是标准名 → 原样返回(不被误改)
+    for std in ("丙氨酸氨基转移酶", "γ-谷氨酰转移酶", "血红蛋白"):
+        assert normalize_indicator_name(std) == std
+
+
+def test_alias_empty_and_unknown():
+    assert normalize_indicator_name("") == ""
+    assert normalize_indicator_name("  ") == ""
+    assert normalize_indicator_name("自定义项 Z") == "自定义项 Z"
+
+
+def test_aliases_for_reverse_lookup():
+    al = aliases_for("γ-谷氨酰转移酶")
+    assert "GGT" in al and "γ-GT" in al and "谷氨酰转肽酶" in al
+    assert aliases_for("丙氨酸氨基转移酶") == ["ALT", "GPT", "谷丙转氨酶", "谷氨酸丙酮酸转氨酶"] \
+        or set(aliases_for("丙氨酸氨基转移酶")) >= {"ALT", "GPT", "谷丙转氨酶"}
+    assert aliases_for("不存在的标准名") == []
 
 
 def test_ref_range_parse():
