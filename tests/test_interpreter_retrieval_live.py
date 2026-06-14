@@ -10,7 +10,20 @@ RRF 已把 6 个粗粒度面板分得很开,Cross-Encoder 反而把 top-1 文档
 拉到 0.727(`甘油三酯高`→误判 liver、`CEA 升高`→误判 blood)。即:**小而粗的 KB 上
 精排是负增益**,其价值要等 KB 规模化(同面板多 chunk、需细粒度排序)才体现。
 本测试因此只固化「召回完整 + 精排不丢相关文档」,top-1 增益留待 KB 扩充后复评
-(见 spawn 的跟进任务)。不在 CI allowlist;Milvus 不可用/库未灌时自动 skip。
+(见 spawn 的跟进任务)。
+
+**为何当前负增益无害**:interpreter(``react_chain._retrieve_kb_for``)把精排 top-4 当
+**无序证据集合**用 —— 4 条全部进 citations + LLM prompt,无 ``evidence[0]`` / top-1 选取;
+生产 query 还是裸指标名(非这里的短语式 GOLD)。叠加 recall@5=1.0(相关面板恒在窗口内),
+top-1/MRR 的负增益只是非代表性微基准上的度量假象,对线上解读输出零影响。
+
+**复评门槛(达标才加回 top-1 断言)**:KB 规模化(同面板多 chunk)后,在扩充的 GOLD 上
+用 ``app.evaluation.retrieval_eval`` 的 ``top1_accuracy`` / ``mrr`` 比较精排前后
+(``_hybrid_docs`` vs ``_reranked_docs``);仅当 ``top1(rerank) ≥ top1(hybrid)`` 且
+``mrr(rerank) ≥ mrr(hybrid)`` 才加回 top-1 增益断言,否则改走 (a) 校准后置信度阈值 /
+(b) 换或微调 reranker(届时样本足够,不再是盲调)。
+
+不在 CI allowlist;Milvus 不可用/库未灌时自动 skip。
 跑法:栈起好 + 灌过 medical_kb 后 `pytest tests/test_interpreter_retrieval_live.py -v`。
 """
 from __future__ import annotations
