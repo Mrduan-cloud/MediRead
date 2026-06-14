@@ -6,10 +6,27 @@
 from __future__ import annotations
 
 import json
+import unicodedata
 from functools import lru_cache
 from pathlib import Path
 
 _SYNONYMS_PATH = Path(__file__).resolve().parents[2] / "data" / "synonyms.json"
+
+# 各种连字符 / 破折号 / 减号统一成 ASCII '-'(OCR / 报告里写法五花八门)
+_DASHES = "‐‑‒–—―−﹣－"
+
+
+def _norm_key(s: str) -> str:
+    """归一化匹配键:NFKC(全角→半角)+ 去全部空白 + 连字符统一 + casefold。
+
+    casefold 同时折叠拉丁与希腊大小写(``Γ``↔``γ``),故 ``γ-GT`` / ``Γ-ＧＴ`` /
+    ``ｇｇｔ`` 等脏写法都能命中同一条。
+    """
+    s = unicodedata.normalize("NFKC", s or "").strip()
+    s = "".join(s.split())
+    for d in _DASHES:
+        s = s.replace(d, "-")
+    return s.casefold()
 
 
 @lru_cache
@@ -33,11 +50,33 @@ def _load_synonyms() -> dict[str, str]:
     }
 
 
+@lru_cache
+def _normalized_lookup() -> dict[str, str]:
+    """{归一化键 → 标准名}。键经 _norm_key,故大小写/全半角/连字符/空白都不敏感。"""
+    return {_norm_key(k): v for k, v in _load_synonyms().items()}
+
+
 def normalize_indicator_name(raw_name: str) -> str:
-    """根据词典把别名映射为标准名。匹配失败则返回原字符串。"""
-    syn = _load_synonyms()
-    key = raw_name.strip().upper().replace(" ", "")
-    return syn.get(key) or syn.get(raw_name.strip()) or raw_name.strip()
+    """把别名(中/英、缩写、旧称、脏 OCR 变体)映射为标准名;匹配失败返回原字符串。
+
+    例:``GGT`` / ``γ-GT`` / ``ｇｇｔ`` / ``谷氨酰转肽酶`` 都 → ``γ-谷氨酰转移酶``。
+    """
+    if not raw_name:
+        return ""
+    return _normalized_lookup().get(_norm_key(raw_name), raw_name.strip())
+
+
+@lru_cache
+def _reverse_lookup() -> dict[str, list[str]]:
+    rev: dict[str, list[str]] = {}
+    for alias, standard in _load_synonyms().items():
+        rev.setdefault(standard, []).append(alias)
+    return rev
+
+
+def aliases_for(standard_name: str) -> list[str]:
+    """反查一个标准名已知的全部别名(供展示 / KB 检索查询扩展)。无则空列表。"""
+    return list(_reverse_lookup().get((standard_name or "").strip(), []))
 
 
 def parse_ref_range(text: str | None) -> tuple[float | None, float | None]:
