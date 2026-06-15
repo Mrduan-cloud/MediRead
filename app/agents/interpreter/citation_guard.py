@@ -68,8 +68,12 @@ class GuardResult:
 
     @property
     def grounded(self) -> bool:
-        """所有「必须接地」字段都接地,才整体通过。"""
-        return all(self.fields[f].grounded for f in self.required if f in self.fields)
+        """所有「必须接地」字段都存在且接地,才整体通过。
+
+        注意必须先判 `f in self.fields`:缺字段视为未接地(否则 `all([])` 会把
+        「必填字段整个缺失」误判为通过)。
+        """
+        return all(f in self.fields and self.fields[f].grounded for f in self.required)
 
     @property
     def ungrounded_fields(self) -> list[str]:

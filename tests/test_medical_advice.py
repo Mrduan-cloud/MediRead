@@ -31,9 +31,12 @@ def test_red_line_catches_medication_and_diagnosis(text):
 @pytest.mark.parametrize("text", [
     "低脂低糖饮食、增加有氧运动、控制体重。",
     "限酒、规律作息、清淡饮食。",
+    "每天饮水 2000ml，少喝含糖饮料。",       # 饮水量不是用药剂量 → 不应误判
+    "每天补充约 50g 优质蛋白质。",           # 食物克数不是用药剂量
+    "建议每天步行 6000 步。",
     "",
 ])
-def test_red_line_passes_safe_lifestyle(text):
+def test_red_line_passes_safe_lifestyle_and_dietary_quantities(text):
     assert violates_red_line(text) is False
 
 

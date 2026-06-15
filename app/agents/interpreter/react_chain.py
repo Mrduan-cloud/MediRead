@@ -19,7 +19,12 @@ from loguru import logger
 
 from app.agents.interpreter.citation_guard import GuardResult, guard
 from app.agents.interpreter.joint_analysis import detect_joint_signals
-from app.agents.interpreter.medical_advice import build_advice
+from app.agents.interpreter.medical_advice import (
+    DISCLAIMER,
+    build_advice,
+    lifestyle_advice,
+    violates_red_line,
+)
 from app.agents.interpreter.prompts import SYSTEM_PROMPT
 from app.agents.interpreter.risk_grading import RiskLevel, TriageLevel, grade_risk
 from app.agents.parser.schemas import Report
@@ -117,9 +122,14 @@ async def _interpret_indicator(ind, joint_patterns: list[str]) -> dict[str, Any]
             break
 
     grounded = bool(guard_res and guard_res.grounded)
+    llm_interp = gen.get("interpretation") or ""
+    # 临床红线:即便引用接地,若解读正文越界(用药/诊断)也不当权威输出 → 降级处理
+    if grounded and violates_red_line(llm_interp):
+        grounded = False
+    # citations 跟随最终 grounded:降级后不展示我们不输出的解读所对应的引用
     valid_cites = (
         guard_res.fields["interpretation"].valid
-        if guard_res and "interpretation" in guard_res.fields else []
+        if grounded and guard_res and "interpretation" in guard_res.fields else []
     )
     # 建议永远经临床红线层(就医分级 + 安全生活方式 + 免责);未接地会被强制就医兜底
     advice = build_advice(risk, joint_patterns, grounded=grounded,
@@ -135,7 +145,7 @@ async def _interpret_indicator(ind, joint_patterns: list[str]) -> dict[str, Any]
         "grounded": grounded,
         "react_steps": steps,
         "citations": valid_cites,              # 只列经守卫校验为真的引用
-        "interpretation": (gen.get("interpretation") or "") if grounded else _UNGROUNDED_INTERP,
+        "interpretation": llm_interp if grounded else _UNGROUNDED_INTERP,
         "lifestyle": advice["lifestyle"],
         "triage_advice": advice["triage_advice"],
         "disclaimer": advice["disclaimer"],
@@ -154,24 +164,38 @@ async def interpret_report(report: Report) -> dict[str, Any]:
             patterns_by_indicator.setdefault(n, []).append(s.pattern)
 
     interpretations: list[dict] = []
+    had_error = False
     for ind in abnormal:
         try:
             interpretations.append(
                 await _interpret_indicator(ind, patterns_by_indicator.get(ind.name, []))
             )
         except Exception as e:
+            had_error = True
             logger.exception("interpret {} failed", ind.name)
+            # 出错也保持与正常项一致的字段形状(下游 it["citations"] 等不会 KeyError),
+            # 并保守降级:强制就医 + 免责,绝不静默给一个"看起来正常"的结果。
             interpretations.append({
                 "indicator": ind.name,
                 "value": ind.value,
-                "error": str(e),
+                "ref_range": ind.ref_range,
+                "risk_level": RiskLevel.WATCH.value,
+                "triage": TriageLevel.SPECIALIST.value,
+                "is_critical": False,
                 "grounded": False,
                 "react_steps": 0,
-                "risk_level": RiskLevel.WATCH.value,
-                "triage": TriageLevel.GENERAL.value,
+                "citations": [],
+                "interpretation": _UNGROUNDED_INTERP,
+                "lifestyle": lifestyle_advice(ind.name, patterns_by_indicator.get(ind.name, [])),
+                "triage_advice": "解读过程出错,建议就医由医生进一步确认。",
+                "disclaimer": DISCLAIMER,
+                "escalated": True,
+                "error": str(e),
             })
 
-    agent_invocations.labels(agent="interpreter", outcome="ok").inc()
+    agent_invocations.labels(
+        agent="interpreter", outcome="error" if had_error else "ok"
+    ).inc()
     return {
         "report_id": report.report_id,
         "user_id": report.user_id,
