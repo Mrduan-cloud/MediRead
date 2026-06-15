@@ -1,27 +1,53 @@
-"""LangChain ReAct 主链：RAG 检索 → 多指标联合分析 → 风险分级 → 结构化解读。"""
+"""医学解读主链:接地驱动的有界重试(ReAct, max 3 步)。
+
+每个异常指标走一个**有界重试**循环,由引用守卫(citation_guard)当停止条件:
+
+    检索证据 → LLM 生成解读 → 引用守卫判定是否「真的接地」
+        ├─ 接地 → 收尾
+        └─ 未接地 → 放宽检索(扩窗 + 带方向/联合信号),累积证据,重试(至多 3 步)
+
+这就是「ReAct」在本场景的克制落地:loop 由守卫反馈驱动,而非让 LLM 自由多步漫游。
+三步仍未接地 → 不把未经核验的解读当权威输出,改走 medical_advice 的确定性安全建议
+(就医分级 + 饮食运动作息 + 免责),并标 grounded=False。建议这一步永远经过临床红线层,
+绝不让 LLM 直接给用药/诊断。
+"""
 from __future__ import annotations
 
-import json
-import re
 from typing import Any
 
 from loguru import logger
 
+from app.agents.interpreter.citation_guard import GuardResult, guard
 from app.agents.interpreter.joint_analysis import detect_joint_signals
+from app.agents.interpreter.medical_advice import build_advice
 from app.agents.interpreter.prompts import SYSTEM_PROMPT
 from app.agents.interpreter.risk_grading import RiskLevel, TriageLevel, grade_risk
 from app.agents.parser.schemas import Report
 from app.config import get_settings
-from app.core.llm import chat_complete
 from app.observability.metrics import agent_invocations
-from app.rag.hybrid_retrieval import hybrid_search
-from app.rag.reranker import cross_encoder_rerank
+
+MAX_REACT_STEPS = 3
+_UNGROUNDED_INTERP = (
+    "未能在知识库中为该指标找到充分依据,以下仅为基于偏离幅度的分级提示,请就医由医生确认。"
+)
 
 
-async def _retrieve_kb_for(name: str) -> list[dict]:
+async def _retrieve_kb_for(query: str, top_k: int = 4) -> list[dict]:
+    # 重型 RAG 依赖(pymilvus / sentence-transformers / FlagEmbedding)惰性导入,
+    # 使 react_chain 可在 CI 轻量环境被导入(golden 测试会 monkeypatch 掉本函数)。
+    from app.rag.hybrid_retrieval import hybrid_search
+    from app.rag.reranker import cross_encoder_rerank
+
     s = get_settings()
-    chunks = await hybrid_search(collection=s.milvus_collection_medical, query=name, top_k=20)
-    return cross_encoder_rerank(name, chunks, top_k=4)
+    chunks = await hybrid_search(collection=s.milvus_collection_medical, query=query, top_k=20)
+    return cross_encoder_rerank(query, chunks, top_k=top_k)
+
+
+async def _llm_complete(prompt: str, **kwargs) -> str:
+    """LLM 调用包装:openai 依赖惰性导入,同时给 golden 测试一个稳定的 monkeypatch 点。"""
+    from app.core.llm import chat_complete
+
+    return await chat_complete(prompt, **kwargs)
 
 
 def _render_prompt(ind, evidence: list[dict], risk) -> str:
@@ -34,14 +60,17 @@ def _render_prompt(ind, evidence: list[dict], risk) -> str:
 分级：{risk.risk_level.value} · 就医建议：{risk.triage.value}{'（危急值兜底）' if risk.is_critical else ''}
 
 请基于以下证据生成 JSON：{{"interpretation": "...", "lifestyle": "...", "triage_advice": "..."}}
-每个字段都要包含至少 1 条 [doc_id:chunk_id] 引用，禁止下「诊断结论」。
+每个字段都要包含至少 1 条 [doc_id:chunk_id] 引用，引用必须来自下方证据，禁止下「诊断结论」。
 证据：
 {citations}
 """
 
 
 def _safe_json(raw: str) -> dict:
-    m = re.search(r"\{.*\}", raw, re.DOTALL)
+    import json
+    import re
+
+    m = re.search(r"\{.*\}", raw or "", re.DOTALL)
     if not m:
         return {}
     try:
@@ -50,37 +79,94 @@ def _safe_json(raw: str) -> dict:
         return {}
 
 
+def _step_query(ind, step: int) -> str:
+    """第 1 步用裸指标名;后续步放宽:带异常方向 + 临床意义,捞进更多/更相关证据。"""
+    if step == 1:
+        return ind.name
+    return f"{ind.name} {ind.abnormal_direction or ''} 临床意义 参考范围".strip()
+
+
+async def _interpret_indicator(ind, joint_patterns: list[str]) -> dict[str, Any]:
+    risk = grade_risk(ind.name, ind.value, ind.ref_range)
+    evidence_by_key: dict[str, dict] = {}
+    gen: dict = {}
+    guard_res: GuardResult | None = None
+    steps = 0
+
+    for step in range(1, MAX_REACT_STEPS + 1):
+        steps = step
+        # 逐步放宽精排窗口(4 / 8 / 12),证据按 doc:chunk 去重累积
+        for e in await _retrieve_kb_for(_step_query(ind, step), top_k=4 * step):
+            evidence_by_key[f"{e['doc_id']}:{e['chunk_id']}"] = e
+        evidence = list(evidence_by_key.values())
+
+        raw = await _llm_complete(
+            _render_prompt(ind, evidence, risk), system=SYSTEM_PROMPT,
+            response_format="json", temperature=0.2, max_tokens=600,
+        )
+        gen = _safe_json(raw)
+        guard_res = guard(
+            {
+                "interpretation": gen.get("interpretation") or "",
+                "lifestyle": gen.get("lifestyle") or "",
+                "triage_advice": gen.get("triage_advice") or "",
+            },
+            evidence,
+        )
+        if guard_res.grounded:
+            break
+
+    grounded = bool(guard_res and guard_res.grounded)
+    valid_cites = (
+        guard_res.fields["interpretation"].valid
+        if guard_res and "interpretation" in guard_res.fields else []
+    )
+    # 建议永远经临床红线层(就医分级 + 安全生活方式 + 免责);未接地会被强制就医兜底
+    advice = build_advice(risk, joint_patterns, grounded=grounded,
+                          llm_lifestyle=gen.get("lifestyle"))
+
+    return {
+        "indicator": ind.name,
+        "value": ind.value,
+        "ref_range": ind.ref_range,
+        "risk_level": risk.risk_level.value,
+        "triage": advice["triage"],            # 经红线升级后的就医分级
+        "is_critical": risk.is_critical,
+        "grounded": grounded,
+        "react_steps": steps,
+        "citations": valid_cites,              # 只列经守卫校验为真的引用
+        "interpretation": (gen.get("interpretation") or "") if grounded else _UNGROUNDED_INTERP,
+        "lifestyle": advice["lifestyle"],
+        "triage_advice": advice["triage_advice"],
+        "disclaimer": advice["disclaimer"],
+        "escalated": advice["escalated"],
+    }
+
+
 async def interpret_report(report: Report) -> dict[str, Any]:
     abnormal = [ind for ind in report.indicators if ind.abnormal]
     joint = detect_joint_signals([ind.name for ind in abnormal])
 
+    # 指标 → 命中的联合信号 pattern(供 medical_advice 选生活方式建议)
+    patterns_by_indicator: dict[str, list[str]] = {}
+    for s in joint:
+        for n in s.matched_indicators:
+            patterns_by_indicator.setdefault(n, []).append(s.pattern)
+
     interpretations: list[dict] = []
     for ind in abnormal:
         try:
-            evidence = await _retrieve_kb_for(ind.name)
-            risk = grade_risk(ind.name, ind.value, ind.ref_range)
-            prompt = _render_prompt(ind, evidence, risk)
-            raw = await chat_complete(prompt, system=SYSTEM_PROMPT, response_format="json",
-                                       temperature=0.2, max_tokens=600)
-            text = _safe_json(raw)
-            interpretations.append({
-                "indicator": ind.name,
-                "value": ind.value,
-                "ref_range": ind.ref_range,
-                "risk_level": risk.risk_level.value,
-                "triage": risk.triage.value,
-                "is_critical": risk.is_critical,
-                "citations": [f"{e['doc_id']}:{e['chunk_id']}" for e in evidence],
-                "interpretation": text.get("interpretation") or "",
-                "lifestyle": text.get("lifestyle") or "",
-                "triage_advice": text.get("triage_advice") or "",
-            })
+            interpretations.append(
+                await _interpret_indicator(ind, patterns_by_indicator.get(ind.name, []))
+            )
         except Exception as e:
             logger.exception("interpret {} failed", ind.name)
             interpretations.append({
                 "indicator": ind.name,
                 "value": ind.value,
                 "error": str(e),
+                "grounded": False,
+                "react_steps": 0,
                 "risk_level": RiskLevel.WATCH.value,
                 "triage": TriageLevel.GENERAL.value,
             })
