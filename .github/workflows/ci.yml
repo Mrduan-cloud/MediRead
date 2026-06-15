@@ -44,7 +44,9 @@ jobs:
           # 所以即便是"纯逻辑测试"也需要 loguru;test_auth_security 透过 app/auth/__init__.py
           # 急加载 jwt.py → 需要 fastapi + PyJWT,passwords.py → bcrypt。这里装的都是轻量库,
           # 不碰 paddleocr / paddlepaddle / pymilvus / sentence-transformers 等重型 OCR/RAG 栈。
-          pip install pydantic pydantic-settings jsonschema rank_bm25 loguru bcrypt PyJWT fastapi
+          # prometheus-client: react_chain 顶层 import app.observability.metrics 需要它
+          # (interpret_e2e_golden 会 import react_chain);其余重型 RAG/openai 依赖已惰性化。
+          pip install pydantic pydantic-settings jsonschema rank_bm25 loguru bcrypt PyJWT fastapi prometheus-client
 
       - name: Ruff lint
         run: ruff check app tests scripts
@@ -70,7 +72,9 @@ jobs:
         # 真实 OCR 的 test_ocr_smoke 带 `ocr` 标记，被 addopts `-m 'not ocr'` 默认 deselect。
         # test_auth_security 测口令哈希 + 锁定策略纯函数（只需 bcrypt，不碰 DB/tortoise）；
         # 带 DB 的 test_routes_auth 需 tortoise/httpx,留给本地 + 完整 dev 依赖跑。
-        run: pytest tests/test_normalizer.py tests/test_risk_grading.py tests/test_ocr_parsing.py tests/test_layout.py tests/test_auth_security.py tests/test_kb_docs.py tests/test_bm25.py tests/test_rrf_fusion.py tests/test_bm25_cache.py tests/test_retrieval_eval.py -v
+        # interpret_e2e_golden monkeypatch 掉检索/LLM,跑完整解读链路（react_chain 的重型
+        # RAG/openai 依赖已惰性化），故无需 pymilvus/sentence-transformers/openai。
+        run: pytest tests/test_normalizer.py tests/test_risk_grading.py tests/test_ocr_parsing.py tests/test_layout.py tests/test_auth_security.py tests/test_kb_docs.py tests/test_bm25.py tests/test_rrf_fusion.py tests/test_bm25_cache.py tests/test_retrieval_eval.py tests/test_citation_guard.py tests/test_medical_advice.py tests/test_interpret_e2e_golden.py -v
 
       - name: Verify PaddleOCR pins (dry-run)
         # 在 setup-python (3.11) 环境里跑 verify 脚本 ——
