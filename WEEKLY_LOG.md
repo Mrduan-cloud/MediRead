@@ -75,3 +75,43 @@
 - 轮值：6/23 MediRead 中英文指标别名归一化 · 6/25 MemoMate github_trending
 
 ---
+
+## W07 · 2026-07-06 → 2026-07-12 · 主项目（MediRead Interpreter 推理 + 风险分级）
+
+> 对应简历：「医学解读 Agent · ReAct 推理 · 多指标联合 · 风险分级 / 就医分级」
+> 本周角色：MediRead 当主项目。完成驱动,本节按 plan 标称日期归档（实际在一个工作 session 内做完 + 真实栈 live 验证）。
+
+### 这周做了什么
+
+三连查先行：interpreter 其实**已大半实现**（risk_grading 4 级 + 危急值、joint_analysis 规则、react_chain 链路都在），真缺口是「**引用守卫 + ReAct 边界 + medical_advice 独立成层 + e2e golden**」,而非从零造。据此一个 PR（`#26`）补齐：
+
+| 增量 | 内容 |
+|---|---|
+| `citation_guard.py`（新·纯逻辑） | 抽 `[doc_id:chunk_id]` 对照**本轮证据**校验,识别编造/未接地引用;当有界重试循环的停止条件。11 测试 |
+| `react_chain` 重写 | 线性单趟 → **引用守卫驱动的有界重试** ReAct（max 3 步）:未接地→放宽检索（扩窗 4/8/12 + 带方向/联合信号）累积证据重试;三步仍不接地→**不输出未核验解读**,改安全降级文案 |
+| `medical_advice.py`（新·纯逻辑） | 确定性**临床红线层**:只产就医分级 + 安全生活方式(饮食运动作息,绝不含药物/诊断)+ 免责;危急值/建议就医/未接地强制升级就医;LLM 自由文本命中用药/诊断特征即弃。16 测试 |
+| risk_grading 测试补强 | WATCH/RECHECK 档、低侧偏离、非数值、无参考范围、0.6 边界 |
+| e2e golden snapshot | monkeypatch 检索/LLM 跑完整链路钉确定性快照(接地+肝三联一步收尾 / 危急值兜底 / 始终未接地→重试 3 步+红线强制就医) |
+| 工程 | `react_chain` 重型 RAG(pymilvus/sentence-transformers)+openai **惰性化** + LLM 走 `_llm_complete` 包装,使 golden 进 CI 轻量环境(allowlist + prometheus-client);「屏蔽重依赖子进程」验证可导入 |
+
+合并后**重建 api 镜像做真实栈 live 验证**（真 Milvus medical_kb + 真 DeepSeek）。
+
+### 现状
+
+- ✅ interpreter 四件套就位:引用守卫 + 有界重试 ReAct + 临床红线建议 + golden;CI（lint-test/docker-build/changes）三绿,本地 121 passed。
+- ✅ live 验证链路全通:解读文本医学上稳妥克制(无诊断/用药)、risk/triage 正确、肝三联命中、red-line 干净、守卫接受真实引用 grounded=True。
+- 🟡 **live 发现「接地但跨面板引用」**:肝酶 ALT/AST 的引用指向了 `tumor_markers_panel`。引用守卫挡得住「编造」,挡不住「真实但语义不相关」——根因是 6 文档小 KB 上 Cross-Encoder 负增益致检索混入错面板 chunk,`grounded=True` 一步即停、有界重试没机会扩检索。已 spawn 跟进 `task_54b9677e`（面板感知检索 / 收紧接地判据,与既有 Cross-Encoder 负增益复评同源,等 KB 规模化再做）。
+
+### 收获
+
+1. **三连查省下重复造轮子**:动手前先盘清现状,发现 interpreter 已大半实现,把一周硬活精准收敛到「真缺口」(守卫/边界/红线/golden),而不是推倒重写。
+2. **「ReAct」要诚实落地**:在「真全 ReAct 多步漫游」「纯线性还硬叫 ReAct」「接地驱动的有界重试」之间选了第三个——循环由引用守卫反馈驱动、有界 3 步、未接地不输出未核验结论。简历 bullet 名副其实,且面试能讲清「为什么这样克制」。
+3. **临床红线交给确定性代码,不交给 LLM**:建议层只产安全三类内容,危急/未接地强制就医,LLM 越界文本即弃。医疗场景里「能不能给用药/诊断」不该赌模型自觉。
+4. **惰性化让重模块的确定性测试也能进 CI**:延续 W04 的评测分层 / `__init__` 瘦身纪律,把 react_chain 的重依赖推到函数内,monkeypatch golden 就能在 CI 轻量环境守护整条链路。
+5. **live 验证抓到 monkeypatch 测不出的问题**（本周最有价值）:「接地但跨面板引用」只有真栈 + 真 LLM 能暴露——确定性 golden 把检索/LLM 都打桩了,自然看不到检索混面板。延续 W04「诚实负结果 > 假增益」「别在 6 文档微 KB 上盲调」:如实记录 + spawn 跟进,不 hack quick-fix。**确定性测试保正确性,live 验证保真实性,两者缺一不可。**
+
+### 下周预告 · W08（07/13–07/19）· MemoMate servers 扩充
+
+主项目切到 **MemoMate**:落地 W06 主动留下的 `wechat_mp`（公开公众号文章解析,优先 stdlib 正则路线）/ `12306`（余票查询,需评估反爬与可验证性）等;副项目穿插 NutriCore 画像字段、MediRead `task_54b9677e` 面板感知检索（视 KB 规模化进度）。
+
+---
