@@ -87,6 +87,13 @@ def test_guard_reports_hallucinations_across_fields():
     assert res.hallucinated == ["made_up:1"]
 
 
+def test_guard_missing_required_field_not_grounded():
+    # interpretation 整个字段缺失(LLM 没产出该 key)必须判未接地——
+    # 不能因 all([]) 把「必填字段缺失」误判为通过。
+    res = guard({"lifestyle": "见 [liver_function_panel:3]"}, _EV)  # 无 interpretation
+    assert not res.grounded
+
+
 def test_guard_default_required_is_interpretation_only():
     # lifestyle 未接地不影响整体(默认只要求 interpretation)
     res = guard({"interpretation": "见 [liver_function_panel:5]", "lifestyle": "多运动"}, _EV)

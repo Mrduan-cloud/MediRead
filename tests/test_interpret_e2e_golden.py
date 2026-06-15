@@ -84,6 +84,26 @@ def test_interpret_report_golden(monkeypatch):
     assert proj == _EXPECTED
 
 
+async def _fake_llm_redline(prompt: str, **kwargs) -> str:
+    # 引用接地(带 [kb:1]),但正文越界:确诊 + 用药
+    return ('{"interpretation": "确诊为痛风，建议服用别嘌醇 100mg [kb:1]。", '
+            '"lifestyle": "多饮水 [kb:1]。", "triage_advice": "见 [kb:1]。"}')
+
+
+def test_red_line_in_interpretation_downgrades(monkeypatch):
+    monkeypatch.setattr(react_chain, "_retrieve_kb_for", _fake_retrieve)
+    monkeypatch.setattr(react_chain, "_llm_complete", _fake_llm_redline)
+
+    report = Report(report_id="r2", user_id="u1", source_object_key="k",
+                    indicators=[_ind("尿酸", 600.0, "150-420")])
+    it = asyncio.run(react_chain.interpret_report(report))["interpretations"][0]
+    # 引用虽接地,但正文越红线(确诊/用药)→ 降级:不输出越界原文、citations 清空、强制就医
+    assert it["grounded"] is False
+    assert it["citations"] == []
+    assert "确诊" not in it["interpretation"] and "别嘌醇" not in it["interpretation"]
+    assert it["escalated"] is True
+
+
 def test_ungrounded_gets_safe_degraded_text(monkeypatch):
     monkeypatch.setattr(react_chain, "_retrieve_kb_for", _fake_retrieve)
     monkeypatch.setattr(react_chain, "_llm_complete", _fake_llm)
