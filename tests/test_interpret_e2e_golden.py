@@ -104,6 +104,28 @@ def test_red_line_in_interpretation_downgrades(monkeypatch):
     assert it["escalated"] is True
 
 
+async def _fake_retrieve_mixed(query: str, top_k: int = 4) -> list[dict]:
+    # 一条好 chunk + 两条畸形(缺 ids / 缺 text)
+    return [
+        {"doc_id": "kb", "chunk_id": "1", "text": "ok"},
+        {"doc_id": "bad"},          # 缺 chunk_id
+        {"text": "no ids"},          # 缺 doc_id/chunk_id
+    ]
+
+
+def test_malformed_chunks_skipped_not_aborted(monkeypatch):
+    monkeypatch.setattr(react_chain, "_retrieve_kb_for", _fake_retrieve_mixed)
+    monkeypatch.setattr(react_chain, "_llm_complete", _fake_llm)  # 引用 [kb:1]
+
+    report = Report(report_id="r3", user_id="u1", source_object_key="k",
+                    indicators=[_ind("γ-谷氨酰转移酶", 70.0, "10-50")])
+    it = asyncio.run(react_chain.interpret_report(report))["interpretations"][0]
+    # 畸形 chunk 被跳过,好 chunk 仍可接地;不因坏数据落 except
+    assert "error" not in it
+    assert it["grounded"] is True
+    assert it["citations"] == ["kb:1"]
+
+
 def test_ungrounded_gets_safe_degraded_text(monkeypatch):
     monkeypatch.setattr(react_chain, "_retrieve_kb_for", _fake_retrieve)
     monkeypatch.setattr(react_chain, "_llm_complete", _fake_llm)

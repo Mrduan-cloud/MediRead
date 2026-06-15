@@ -100,9 +100,14 @@ async def _interpret_indicator(ind, joint_patterns: list[str]) -> dict[str, Any]
 
     for step in range(1, MAX_REACT_STEPS + 1):
         steps = step
-        # 逐步放宽精排窗口(4 / 8 / 12),证据按 doc:chunk 去重累积
+        # 逐步放宽精排窗口(4 / 8 / 12),证据按 doc:chunk 去重累积。
+        # 跳过缺 doc_id/chunk_id/text 的畸形 chunk(与 citation_guard 同走防御式 .get,
+        # 一条坏数据不该让整条指标解读落 except 全降级)。
         for e in await _retrieve_kb_for(_step_query(ind, step), top_k=4 * step):
-            evidence_by_key[f"{e['doc_id']}:{e['chunk_id']}"] = e
+            doc_id, chunk_id = e.get("doc_id"), e.get("chunk_id")
+            if doc_id is None or chunk_id is None or "text" not in e:
+                continue
+            evidence_by_key[f"{doc_id}:{chunk_id}"] = e
         evidence = list(evidence_by_key.values())
 
         raw = await _llm_complete(
