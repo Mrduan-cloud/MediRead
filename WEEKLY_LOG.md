@@ -115,3 +115,43 @@
 主项目切到 **MemoMate**:落地 W06 主动留下的 `wechat_mp`（公开公众号文章解析,优先 stdlib 正则路线）/ `12306`（余票查询,需评估反爬与可验证性）等;副项目穿插 NutriCore 画像字段、MediRead `task_54b9677e` 面板感知检索（视 KB 规模化进度）。
 
 ---
+
+## W10 · 2026-07-27 → 2026-08-02 · 主项目（MediRead 多指标联合分析深化）
+
+> 对应简历：「医学解读 Agent · ReAct 推理 · 多指标联合 · 风险分级 / 就医分级」
+> 本周角色：MediRead 当主项目（停滞仓轮到）。完成驱动,本节按 plan 标称日期归档（实际在一个工作 session 内做完 + 真实 seed 实证 + 两轮 code-review 收口）。
+
+### 这周做了什么
+
+三连查先行：盘清 git / repo / plan 后,interpreter 的真缺口 = `joint_analysis` 是最薄的一层（47 行 / 3 条规则 / **方向盲目**）；而「接地但跨面板错引」follow-up 的门槛（medical_kb 规模化）仍未满足 → 继续延后,本周聚焦联合分析本体。一个 PR（`#30`）收口：
+
+| 增量 | 内容 |
+|---|---|
+| 方向感知 | 规则标注预期 high/low；`detect_joint_signals` 新增可选 `directions`,参与某规则的指标方向须与预期一致才命中 —— 抑制「ALT 偏低也判肝损伤」「血红蛋白偏高也判贫血」式方向错配。`normalize_direction` 兼容 high/low/偏高/偏低/↑↓,未知方向保守不报 |
+| 扩规则 3→6 | liver_injury / **hypercholesterolemia(新)** / dyslipidemia / **renal_impairment(新)** / **dysglycemia(新)** / anemia,全部有 KB 面板文档接地；每条标注 `panel`（指标→面板映射） |
+| 结论落指标 | 联合结论 `hint` 从只停报告级 `joint_signals` 回填到 per-indicator `joint_hints`,前端可在指标卡片展示参与的联合判定 |
+| 顺手修 bug | `matched_indicators` 不再别名共享模块级 `JOINT_RULES`（改 `list(req)`）,加 mutation-safety 回归测试守护 |
+| 测试 | `test_joint_analysis` 扩到 17 例（向后兼容 / 方向匹配 / 错配抑制 / 未知方向保守 / require_any 方向过滤 / 新规则 / 归一化 / 别名安全）+ e2e golden 加 `joint_hints` 落指标 |
+
+合并前**真实 seed 数据实证**：`sample_indicators.json` 经 normalizer → `detect_joint_signals` 正确触发 liver_injury + hypercholesterolemia + dyslipidemia（方向皆 high）。
+
+### 现状
+
+- ✅ joint_analysis 从「集合包含判定」升级为「方向感知 + KB 接地」的联合判定；6 条规则覆盖肝 / 血脂 / 血糖 / 肾 / 血常规面板,向后兼容 `directions=None`。
+- ✅ CI 三绿（lint-test / changes / docker-build）,17 单测 + golden 守护；经两轮 /code-review 收口（轮1 修 `interpretations[-1]` 脆弱耦合 → 分支内 `it` 变量；轮2 docstring 记隐式契约 + 别名回归测试）。
+- 🟡 **「接地但跨面板错引」+ Cross-Encoder 负增益复评仍延后**：medical_kb 仍 6 文档,规模化门槛未满足。本周 `panel` 字段已为修法#1（面板感知检索）备料,但不动检索。
+- 🧹 顺清 W04 老账：宙吊的 docker-compose / vite 未提交改动全部 revert（说明见收获 #2）。
+
+### 收获
+
+1. **三连查再次省下返工**：延续 W07,动手前先盘 git / repo / plan,精准定位 `joint_analysis` 是真缺口（而非从零造规则引擎）,也确认 off-panel 门槛未到、不盲动检索。
+2. **删代码前先看它是否被产品叙事消费**（本周最大教训）：宙吊的「删 ollama」diff 看着像死代码清理,`git grep` 一查才发现 Ollama 是 MediRead「健康数据零外传」核心卖点（README / DEPLOYMENT / architecture / config 默认值全建立其上,DEPLOYMENT 明确禁止配置第三方云 LLM URL）。那份 diff 实为本机无 GPU 改用云 DeepSeek 的本地 dev 作物,提交会掀翻文档化架构 → 全 revert。**「看着像死代码」不是删除理由,先确认没有消费者（代码 + 文档 + 商业叙事）。**
+3. **方向感知与 W07「接地但跨面板错引」同源**：W07 暴露「真实但语义不相关引用」,本质是检索相关性 + 接地判据强度；方向错配（ALT 偏低也判肝损伤）是同一类「字面命中但语义错」。顺手把指标→面板映射（`panel` 字段）编码,为将来面板感知检索铺路。
+4. **恒开方向校验引入隐式契约,要显式记**：react_chain 现在总传 `directions`,使「被标异常但无方向」的指标静默退出联合检测。验证当前 `extractor._mark_abnormal` 保证 abnormal ⟹ 有方向,并把契约写进 docstring + 单测锁住——第二轮 review 才挖出的,确定性逻辑也有「隐式依赖上游数据形态」的坑。
+5. **review 缺口分级决定走不走 /debug**：两轮 review 都是健壮性 / 契约 / 测试缺口（静态可证）,非运行期 e2e 隐患,故改完回归即可,未触发 /debug——与 W08/W09「有 e2e 隐患才 debug」一致,不为流程而流程。
+
+### 下周预告 · W11（08/03–08/09）· MemoMate servers 扩充
+
+主项目切到 **MemoMate**：按 W08 范式起手先评估候选（`12306` 余票 / `wechat_mp` 深化等）的反爬与可验证性,再定做哪个、怎么做（「有官方 API 才最干净」优先）。副项目穿插：MediRead off-panel（视 KB 规模化）、NutriCore 轮值。
+
+---
