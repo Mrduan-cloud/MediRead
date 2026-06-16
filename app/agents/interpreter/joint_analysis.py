@@ -106,6 +106,13 @@ def detect_joint_signals(
         directions: 可选 ``{指标名 -> 异常方向}``。提供时启用**方向校验**——参与某规则
             的指标方向须与规则预期方向一致才算命中（避免「ALT 偏低也判肝损伤」）。为
             ``None``（历史调用）则不校验方向，保持向后兼容。
+
+    Note:
+        启用方向校验时，方向**未知**（``None`` 或无法归一）的指标按「不匹配」处理 →
+        会从其本可命中的联合规则中被剔除（保守不误报）。因此调用方应保证每个异常指标
+        都带 high / low 方向：当前 OCR 抽取路径 ``parser/extractor._mark_abnormal`` 在
+        置 ``abnormal=True`` 的同时必写 ``abnormal_direction``，满足此契约；若日后引入
+        「设异常但不带方向」的指标来源，需在该处补方向，否则联合检测会静默 under-fire。
     """
     name_set = set(abnormal_names)
     norm_dir = (

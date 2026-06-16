@@ -122,3 +122,12 @@ def test_signal_carries_panel_and_direction():
     assert liver.panel == "liver_function_panel"
     assert liver.direction == "high"
     assert liver.hint  # 非空联合结论
+
+
+def test_matched_indicators_not_aliasing_rule_list():
+    # matched_indicators 必须是副本,不能别名共享模块级 JOINT_RULES;
+    # 否则下游 mutate(如去重/排序)会污染规则定义,后续检测被带坏。
+    s1 = next(s for s in detect_joint_signals([ALT, AST, GGT]) if s.pattern == "liver_injury")
+    s1.matched_indicators.append("__污染__")
+    s2 = next(s for s in detect_joint_signals([ALT, AST, GGT]) if s.pattern == "liver_injury")
+    assert "__污染__" not in s2.matched_indicators
