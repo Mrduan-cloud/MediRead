@@ -1,0 +1,42 @@
+# 前端 / 演示站独立构建,不进后端镜像(否则 node_modules / 静态产物把构建上下文撑爆)
+frontend/
+web-demo/
+
+# 机密:运行时由 compose 的 env_file 注入,不要 COPY 进镜像层
+.env
+.env.*
+!.env.example
+
+# 版本控制 / IDE
+.git/
+.gitignore
+.idea/
+.vscode/
+
+# Python 缓存与虚拟环境
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+
+# 数据与模型产物(运行时按需下载 / 挂载,不烤进镜像)
+data/raw/
+data/processed/
+models/
+checkpoints/
+*.log
+.cache/
+
+# 离线构建预取的 wheel(只该被 builder 阶段显式 COPY 到 /wheels,不要随 COPY . 进运行时层)
+.wheels/
+
+# 其它工具缓存
+.superpowers/
+
+# OS
+.DS_Store
+Thumbs.db
