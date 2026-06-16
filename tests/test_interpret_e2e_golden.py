@@ -136,3 +136,17 @@ def test_ungrounded_gets_safe_degraded_text(monkeypatch):
     assert "依据" in wbc["interpretation"]
     assert wbc["disclaimer"]
     assert "炎症" not in wbc["interpretation"]      # LLM 原始解读未被当权威输出
+
+
+def test_joint_hints_surface_per_indicator(monkeypatch):
+    monkeypatch.setattr(react_chain, "_retrieve_kb_for", _fake_retrieve)
+    monkeypatch.setattr(react_chain, "_llm_complete", _fake_llm)
+
+    result = asyncio.run(react_chain.interpret_report(_report()))
+    by_name = {it["indicator"]: it for it in result["interpretations"]}
+    # 肝三联三项("偏高"经归一化为 high)都应带上肝损伤联合结论 hint
+    for name in ("丙氨酸氨基转移酶", "天门冬氨酸氨基转移酶", "γ-谷氨酰转移酶"):
+        hints = by_name[name]["joint_hints"]
+        assert hints and any("肝细胞" in h for h in hints)
+    # 未参与任何联合的白细胞:字段存在但为空(形状一致,不 KeyError)
+    assert by_name["白细胞计数"]["joint_hints"] == []
