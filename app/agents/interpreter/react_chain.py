@@ -160,27 +160,32 @@ async def _interpret_indicator(ind, joint_patterns: list[str]) -> dict[str, Any]
 
 async def interpret_report(report: Report) -> dict[str, Any]:
     abnormal = [ind for ind in report.indicators if ind.abnormal]
-    joint = detect_joint_signals([ind.name for ind in abnormal])
+    # 方向感知:把异常方向一并交给联合检测,避免「方向错配」误命中(如 ALT 偏低也判肝损伤)。
+    joint = detect_joint_signals(
+        [ind.name for ind in abnormal],
+        directions={ind.name: ind.abnormal_direction for ind in abnormal},
+    )
 
     # 指标 → 命中的联合信号 pattern(供 medical_advice 选生活方式建议)
+    # 指标 → 联合结论 hint(回填到 per-indicator,让每个指标卡片能展示参与的联合判定)
     patterns_by_indicator: dict[str, list[str]] = {}
+    hints_by_indicator: dict[str, list[str]] = {}
     for s in joint:
         for n in s.matched_indicators:
             patterns_by_indicator.setdefault(n, []).append(s.pattern)
+            hints_by_indicator.setdefault(n, []).append(s.hint)
 
     interpretations: list[dict] = []
     had_error = False
     for ind in abnormal:
         try:
-            interpretations.append(
-                await _interpret_indicator(ind, patterns_by_indicator.get(ind.name, []))
-            )
+            it = await _interpret_indicator(ind, patterns_by_indicator.get(ind.name, []))
         except Exception as e:
             had_error = True
             logger.exception("interpret {} failed", ind.name)
             # 出错也保持与正常项一致的字段形状(下游 it["citations"] 等不会 KeyError),
             # 并保守降级:强制就医 + 免责,绝不静默给一个"看起来正常"的结果。
-            interpretations.append({
+            it = {
                 "indicator": ind.name,
                 "value": ind.value,
                 "ref_range": ind.ref_range,
@@ -196,7 +201,12 @@ async def interpret_report(report: Report) -> dict[str, Any]:
                 "disclaimer": DISCLAIMER,
                 "escalated": True,
                 "error": str(e),
-            })
+            }
+
+        # 把该指标参与的联合结论 hint 回填(正常 / 出错两条路径统一处理),
+        # 让联合判定不止停在报告级 joint_signals,也能落到每个指标卡片。
+        it["joint_hints"] = hints_by_indicator.get(ind.name, [])
+        interpretations.append(it)
 
     agent_invocations.labels(
         agent="interpreter", outcome="error" if had_error else "ok"
