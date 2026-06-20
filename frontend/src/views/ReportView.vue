@@ -37,6 +37,8 @@ const previewUrl = ref<string>("");
 const previewKind = ref<"image" | "pdf" | "">("");
 // 真实上传进度(0–100),由 axios onUploadProgress 驱动
 const uploadPercent = ref(0);
+// 本次 staged 文件已成功上传得到的 report_id;解析失败重试时复用,避免重传残留空报告行
+const uploadedId = ref("");
 
 // 「我的报告」分页
 const page = ref(1);
@@ -85,6 +87,7 @@ function clearStaged() {
   previewUrl.value = "";
   previewKind.value = "";
   uploadPercent.value = 0;
+  uploadedId.value = "";
 }
 
 // 校验 + 生成本地预览,进入 staged 态等用户确认
@@ -111,17 +114,21 @@ async function startParse() {
   const file = stagedFile.value;
   if (!file) return;
   try {
-    phase.value = "uploading";
-    uploadPercent.value = 0;
-    const fd = new FormData();
-    fd.append("file", file);
-    const up = await client.post("/api/upload", fd, {
-      onUploadProgress: (e) => {
-        // e.total 为请求体大小(浏览器已知),上传阶段可靠;给个保底防 0 除
-        uploadPercent.value = Math.round((e.loaded / (e.total || file.size)) * 100);
-      },
-    });
-    currentId.value = up.data.report_id;
+    // 仅在尚未上传时上传;解析失败重试复用已上传的 report_id,不重传(避免残留空报告行)
+    if (!uploadedId.value) {
+      phase.value = "uploading";
+      uploadPercent.value = 0;
+      const fd = new FormData();
+      fd.append("file", file);
+      const up = await client.post("/api/upload", fd, {
+        onUploadProgress: (e) => {
+          // e.total 为请求体大小(浏览器已知),上传阶段可靠;|| 1 兜底防 0 字节除零
+          uploadPercent.value = Math.round((e.loaded / (e.total || file.size || 1)) * 100);
+        },
+      });
+      uploadedId.value = up.data.report_id;
+    }
+    currentId.value = uploadedId.value;
 
     // 上传完成 → OCR 解析是服务端工作、无进度事件,改用不定态指示
     phase.value = "parsing";
