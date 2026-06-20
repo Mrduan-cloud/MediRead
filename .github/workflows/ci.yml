@@ -14,6 +14,7 @@ jobs:
     runs-on: ubuntu-22.04
     outputs:
       docker: ${{ steps.filter.outputs.docker }}
+      frontend: ${{ steps.filter.outputs.frontend }}
     steps:
       - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v3
@@ -25,6 +26,9 @@ jobs:
               - 'requirements.txt'
               - 'app/**'
               - 'scripts/**'
+              - '.github/workflows/ci.yml'
+            frontend:
+              - 'frontend/**'
               - '.github/workflows/ci.yml'
 
   lint-test:
@@ -83,6 +87,32 @@ jobs:
         # CI 单步执行时间 < 10s。若未来想接 --smoke,需要预算下载 paddle 的
         # ~500MB,单独 job + actions/cache。
         run: bash scripts/verify-paddle-pins.sh
+
+  # 前端守护:Vue3 + Vite 上传页(frontend/)的类型检查 + 生产构建。
+  # - 只在 frontend/ 改动时触发(paths-filter),不拖累后端 / docs PR
+  # - `pnpm build` = `vue-tsc -b`(严格类型检查)+ `vite build`(产物构建),一步覆盖
+  # - 用 pnpm-lock.yaml frozen 安装,锁定与本地一致的依赖树
+  frontend:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - name: Install deps (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck + build
+        run: pnpm build
 
   # 独立 job:验证 Dockerfile 还能 build。
   # - 只在 Dockerfile / requirements.txt / app 代码改动时触发,避免每次 docs PR 都跑 13 分钟

@@ -251,7 +251,7 @@ pnpm dev            # → http://localhost:5173 (开发期 /api 自动代理到 
 | `/api/upload`                 | POST | 上传体检报告（image / pdf）     |
 | `/api/parse/{report_id}`      | POST | 触发 OCR 解析与结构化抽取       |
 | `/api/interpret/{report_id}`  | POST | 触发医学解读 + 风险分级         |
-| `/api/history/reports`        | GET  | 我的报告列表（含异常计数）      |
+| `/api/history/reports`        | GET  | 我的报告列表（分页 · 含异常计数）|
 | `/api/history/report/{id}`    | GET  | 单份报告详情（指标 + 最近解读） |
 | `/api/history/series`         | GET  | 多次报告同指标趋势              |
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
-import { useMessage, NButton, NSpin } from "naive-ui";
+import { ref, computed, onMounted, onBeforeUnmount } from "vue";
+import { useMessage, NButton, NSpin, NProgress } from "naive-ui";
 import client from "@/api/client";
 import AppHeader from "@/components/AppHeader.vue";
 import IndicatorTable, { type Indicator } from "@/components/IndicatorTable.vue";
@@ -8,7 +8,14 @@ import InterpretationResult from "@/components/InterpretationResult.vue";
 
 const message = useMessage();
 
-type Phase = "idle" | "uploading" | "parsing" | "parsed" | "interpreting" | "done";
+type Phase =
+  | "idle"
+  | "staged"
+  | "uploading"
+  | "parsing"
+  | "parsed"
+  | "interpreting"
+  | "done";
 const phase = ref<Phase>("idle");
 
 interface ReportRow {
@@ -24,56 +31,110 @@ const interp = ref<any>(null);
 const fileInput = ref<HTMLInputElement | null>(null);
 const dragging = ref(false);
 
-const busy = () => ["uploading", "parsing", "interpreting"].includes(phase.value);
+// 待解析的文件:拖入/选中后先预览确认,再上传解析(而非拖入即跑 OCR+LLM)
+const stagedFile = ref<File | null>(null);
+const previewUrl = ref<string>("");
+const previewKind = ref<"image" | "pdf" | "">("");
+// 真实上传进度(0–100),由 axios onUploadProgress 驱动
+const uploadPercent = ref(0);
+
+// 「我的报告」分页
+const page = ref(1);
+const total = ref(0);
+const PAGE_SIZE = 8;
+const totalPages = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE)));
 
 async function loadReports() {
   try {
-    const { data } = await client.get("/api/history/reports");
-    reports.value = data;
+    const { data } = await client.get("/api/history/reports", {
+      params: { page: page.value, page_size: PAGE_SIZE },
+    });
+    reports.value = data.items || [];
+    total.value = data.total || 0;
   } catch {
     /* 列表失败不阻塞主流程 */
   }
 }
 onMounted(loadReports);
 
+// 离开页面时回收预览 ObjectURL,避免内存泄漏
+onBeforeUnmount(clearStaged);
+
 function pickFile() {
   fileInput.value?.click();
 }
 function onInputChange(e: Event) {
-  const f = (e.target as HTMLInputElement).files?.[0];
-  if (f) void uploadAndParse(f);
+  const target = e.target as HTMLInputElement;
+  const f = target.files?.[0];
+  if (f) stageFile(f);
+  // 清空 input,使「重选同一文件」也能再次触发 change
+  target.value = "";
 }
 function onDrop(e: DragEvent) {
   dragging.value = false;
   const f = e.dataTransfer?.files?.[0];
-  if (f) void uploadAndParse(f);
+  if (f) stageFile(f);
 }
 
 const ALLOWED = ["jpg", "jpeg", "png", "pdf"];
+const MAX_BYTES = 20 * 1024 * 1024;
 
-async function uploadAndParse(file: File) {
+function clearStaged() {
+  if (previewUrl.value) URL.revokeObjectURL(previewUrl.value);
+  stagedFile.value = null;
+  previewUrl.value = "";
+  previewKind.value = "";
+  uploadPercent.value = 0;
+}
+
+// 校验 + 生成本地预览,进入 staged 态等用户确认
+function stageFile(file: File) {
   const ext = file.name.split(".").pop()?.toLowerCase() || "";
   if (!ALLOWED.includes(ext)) {
     message.error(`不支持的文件类型:${ext}（支持 ${ALLOWED.join(" / ")}）`);
     return;
   }
+  if (file.size > MAX_BYTES) {
+    message.error(`文件过大（${prettySize(file.size)}），上限 20MB`);
+    return;
+  }
+  clearStaged();
   interp.value = null;
   indicators.value = [];
+  stagedFile.value = file;
+  previewUrl.value = URL.createObjectURL(file);
+  previewKind.value = ext === "pdf" ? "pdf" : "image";
+  phase.value = "staged";
+}
+
+async function startParse() {
+  const file = stagedFile.value;
+  if (!file) return;
   try {
     phase.value = "uploading";
+    uploadPercent.value = 0;
     const fd = new FormData();
     fd.append("file", file);
-    const up = await client.post("/api/upload", fd);
+    const up = await client.post("/api/upload", fd, {
+      onUploadProgress: (e) => {
+        // e.total 为请求体大小(浏览器已知),上传阶段可靠;给个保底防 0 除
+        uploadPercent.value = Math.round((e.loaded / (e.total || file.size)) * 100);
+      },
+    });
     currentId.value = up.data.report_id;
 
+    // 上传完成 → OCR 解析是服务端工作、无进度事件,改用不定态指示
     phase.value = "parsing";
     const parsed = await client.post(`/api/parse/${currentId.value}`);
     indicators.value = parsed.data.indicators || [];
     phase.value = "parsed";
+    clearStaged();
     message.success(`解析完成,识别 ${indicators.value.length} 项指标`);
+    page.value = 1; // 新报告落在第一页
     void loadReports();
   } catch (e: any) {
-    phase.value = "idle";
+    phase.value = "staged"; // 失败退回预览态,可重试或重选
+    uploadPercent.value = 0;
     message.error(e?.response?.data?.detail || "上传 / 解析失败,请确认后端服务已启动");
   }
 }
@@ -94,6 +155,7 @@ async function runInterpret() {
 
 async function openReport(id: string) {
   try {
+    clearStaged();
     interp.value = null;
     indicators.value = [];
     const { data } = await client.get(`/api/history/report/${id}`);
@@ -111,10 +173,23 @@ async function openReport(id: string) {
 }
 
 function reset() {
+  clearStaged();
   phase.value = "idle";
   currentId.value = "";
   indicators.value = [];
   interp.value = null;
+}
+
+async function goPage(p: number) {
+  if (p < 1 || p > totalPages.value || p === page.value) return;
+  page.value = p;
+  await loadReports();
+}
+
+function prettySize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
 function shortId(id: string) {
@@ -127,12 +202,12 @@ function shortId(id: string) {
     <AppHeader />
     <main class="wrap">
       <section class="main-col">
-        <!-- 上传区:仅在无指标时展示 -->
+        <!-- 上传区:无文件、无指标时展示 -->
         <div
-          v-if="!indicators.length"
+          v-if="phase === 'idle' && !indicators.length"
           class="drop"
-          :class="{ active: dragging, busy: busy() }"
-          @click="!busy() && pickFile()"
+          :class="{ active: dragging }"
+          @click="pickFile"
           @dragover.prevent="dragging = true"
           @dragleave.prevent="dragging = false"
           @drop.prevent="onDrop"
@@ -144,18 +219,55 @@ function shortId(id: string) {
             hidden
             @change="onInputChange"
           />
-          <template v-if="phase === 'uploading'">
-            <n-spin size="small" /><span class="d-title">上传中…</span>
-          </template>
-          <template v-else-if="phase === 'parsing'">
-            <n-spin size="small" /><span class="d-title">PaddleOCR 解析中…</span>
-            <span class="d-sub">版式识别 + 指标抽取 + 数值归一化</span>
-          </template>
-          <template v-else>
-            <div class="d-icon">📄</div>
-            <span class="d-title">上传体检报告</span>
-            <span class="d-sub">点击或拖拽图片 / PDF（jpg · png · pdf，≤ 20MB）</span>
-          </template>
+          <div class="d-icon">📄</div>
+          <span class="d-title">上传体检报告</span>
+          <span class="d-sub">点击或拖拽图片 / PDF（jpg · png · pdf，≤ 20MB）</span>
+        </div>
+
+        <!-- 预览 + 上传进度:staged / uploading / parsing -->
+        <div
+          v-if="stagedFile && ['staged', 'uploading', 'parsing'].includes(phase)"
+          class="card"
+        >
+          <div class="card-head">
+            <h3>
+              预览
+              <span class="muted">· {{ stagedFile.name }} · {{ prettySize(stagedFile.size) }}</span>
+            </h3>
+            <n-button v-if="phase === 'staged'" size="small" quaternary @click="reset">
+              ↺ 重选
+            </n-button>
+          </div>
+
+          <div class="preview">
+            <img v-if="previewKind === 'image'" :src="previewUrl" alt="报告预览" class="pv-img" />
+            <embed v-else :src="previewUrl" type="application/pdf" class="pv-pdf" />
+          </div>
+
+          <!-- 上传中:真实百分比进度条 -->
+          <div v-if="phase === 'uploading'" class="prog">
+            <n-progress
+              type="line"
+              :percentage="uploadPercent"
+              :height="8"
+              :border-radius="6"
+              color="#38bdf8"
+              rail-color="rgba(255,255,255,0.08)"
+            />
+            <span class="prog-label">上传中 {{ uploadPercent }}%</span>
+          </div>
+          <!-- 解析中:服务端 OCR,无进度,不定态 -->
+          <div v-else-if="phase === 'parsing'" class="prog parsing">
+            <n-spin size="small" />
+            <span class="prog-label"
+              >PaddleOCR 解析中…<span class="muted"> 版式识别 + 指标抽取 + 数值归一化</span></span
+            >
+          </div>
+          <!-- 已就绪:确认开始 -->
+          <div v-else class="confirm-row">
+            <n-button type="primary" size="large" @click="startParse">🔍 开始解析</n-button>
+            <span class="muted">确认无误后上传并 OCR 解析</span>
+          </div>
         </div>
 
         <!-- 结构化指标 -->
@@ -188,8 +300,10 @@ function shortId(id: string) {
       <!-- 我的报告 -->
       <aside class="side">
         <div class="side-head">
-          <h4>我的报告</h4>
-          <n-button v-if="indicators.length" size="tiny" quaternary @click="reset">+ 新建</n-button>
+          <h4>我的报告 <span v-if="total" class="muted">· {{ total }}</span></h4>
+          <n-button v-if="indicators.length || stagedFile" size="tiny" quaternary @click="reset">
+            + 新建
+          </n-button>
         </div>
         <p v-if="!reports.length" class="side-empty">暂无报告,上传一份开始体验</p>
         <button
@@ -206,6 +320,13 @@ function shortId(id: string) {
           </div>
           <div class="r-meta">{{ r.created_at?.slice(0, 10) || "—" }} · {{ r.n_indicators }} 项指标</div>
         </button>
+
+        <!-- 分页:仅多于一页时出现 -->
+        <div v-if="totalPages > 1" class="pager">
+          <button class="pg-btn" :disabled="page <= 1" @click="goPage(page - 1)">‹</button>
+          <span class="pg-info">第 {{ page }} / {{ totalPages }} 页</span>
+          <button class="pg-btn" :disabled="page >= totalPages" @click="goPage(page + 1)">›</button>
+        </div>
       </aside>
     </main>
   </div>
@@ -250,9 +371,6 @@ function shortId(id: string) {
   border-color: #38bdf8;
   background: rgba(56, 189, 248, 0.07);
 }
-.drop.busy {
-  cursor: default;
-}
 .d-icon {
   font-size: 38px;
   opacity: 0.85;
@@ -277,17 +395,71 @@ function shortId(id: string) {
   align-items: center;
   justify-content: space-between;
   margin-bottom: 12px;
+  gap: 12px;
 }
 .card-head h3 {
   font-size: 16px;
   font-weight: 600;
   color: #f1f5f9;
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  overflow: hidden;
+}
+.card-head h3 .muted {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .muted {
   color: #64748b;
   font-size: 13px;
   font-weight: 400;
 }
+/* 预览 */
+.preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 12px;
+  padding: 10px;
+  max-height: 460px;
+  overflow: hidden;
+}
+.pv-img {
+  max-width: 100%;
+  max-height: 440px;
+  border-radius: 8px;
+  object-fit: contain;
+}
+.pv-pdf {
+  width: 100%;
+  height: 440px;
+  border: none;
+  border-radius: 8px;
+  background: #fff;
+}
+.prog {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+.prog.parsing {
+  gap: 10px;
+}
+.prog-label {
+  font-size: 14px;
+  color: #cbd5e1;
+  white-space: nowrap;
+}
+.prog :deep(.n-progress) {
+  flex: 1;
+}
+.confirm-row,
 .interpret-row {
   display: flex;
   align-items: center;
@@ -366,6 +538,42 @@ function shortId(id: string) {
   font-size: 12px;
   color: #64748b;
   margin-top: 3px;
+}
+/* 分页 */
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.pg-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: transparent;
+  color: #cbd5e1;
+  font-size: 16px;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.pg-btn:hover:not(:disabled) {
+  border-color: #38bdf8;
+  color: #38bdf8;
+}
+.pg-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.pg-info {
+  font-size: 12px;
+  color: #94a3b8;
 }
 @media (max-width: 820px) {
   .wrap {

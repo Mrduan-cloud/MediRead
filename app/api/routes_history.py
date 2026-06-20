@@ -35,9 +35,28 @@ async def series(user: CurrentUser = Depends(get_current_user), limit: int = 20)
 
 
 @router.get("/reports")
-async def list_reports(user: CurrentUser = Depends(get_current_user)) -> list[dict]:
-    rows = await ReportModel.filter(user_id=user.user_id).order_by("-created_at").limit(50)
-    return [
+async def list_reports(
+    user: CurrentUser = Depends(get_current_user),
+    page: int = 1,
+    page_size: int = 10,
+) -> dict[str, Any]:
+    """分页列出当前用户的报告(最新优先)。
+
+    返回 {items, total, page, page_size},供前端「我的报告」侧栏翻页。
+    防御非法分页参数:页码至少 1,每页 1..50(50 为旧硬上限,避免一次拉太多)。
+    """
+    page = max(1, page)
+    page_size = max(1, min(page_size, 50))
+    base = ReportModel.filter(user_id=user.user_id)
+    total = await base.count()
+    # 次级排序键 report_id 保证稳定全序:created_at 撞值(同秒批量上传)时,
+    # 单凭 -created_at 翻页可能漏项/重项;-report_id 给出确定性 tiebreak。
+    rows = (
+        await base.order_by("-created_at", "-report_id")
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+    )
+    items = [
         {
             "report_id": r.report_id,
             "created_at": r.created_at.isoformat() if r.created_at else None,
@@ -46,6 +65,7 @@ async def list_reports(user: CurrentUser = Depends(get_current_user)) -> list[di
         }
         for r in rows
     ]
+    return {"items": items, "total": total, "page": page, "page_size": page_size}
 
 
 @router.get("/report/{report_id}")
