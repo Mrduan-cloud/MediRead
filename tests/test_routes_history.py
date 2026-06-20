@@ -73,6 +73,31 @@ async def test_list_reports_counts(client):
     )
     r = await client.get("/api/history/reports", headers=auth_header("u1"))
     assert r.status_code == 200
-    rows = r.json()
+    body = r.json()
+    assert body["total"] == 1
+    assert body["page"] == 1
+    rows = body["items"]
     assert rows[0]["n_indicators"] == 2
     assert rows[0]["n_abnormal"] == 1
+
+
+async def test_list_reports_pagination(client):
+    # 建 5 份报告(report_id 自增,created_at 按建序递增 → 最新优先即逆序)
+    for i in range(5):
+        await ReportModel.create(report_id=f"p{i}", user_id="u1", source_object_key="k", indicators=[])
+    p1 = (await client.get("/api/history/reports?page=1&page_size=2", headers=auth_header("u1"))).json()
+    assert p1["total"] == 5
+    assert p1["page_size"] == 2
+    assert [x["report_id"] for x in p1["items"]] == ["p4", "p3"]  # 最新优先
+    p2 = (await client.get("/api/history/reports?page=2&page_size=2", headers=auth_header("u1"))).json()
+    assert [x["report_id"] for x in p2["items"]] == ["p2", "p1"]
+    p3 = (await client.get("/api/history/reports?page=3&page_size=2", headers=auth_header("u1"))).json()
+    assert [x["report_id"] for x in p3["items"]] == ["p0"]
+
+
+async def test_list_reports_pagination_clamps(client):
+    # page<1 收敛到 1;page_size 超上限收敛到 50
+    await ReportModel.create(report_id="c1", user_id="u1", source_object_key="k", indicators=[])
+    body = (await client.get("/api/history/reports?page=0&page_size=999", headers=auth_header("u1"))).json()
+    assert body["page"] == 1
+    assert body["page_size"] == 50
